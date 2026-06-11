@@ -3,8 +3,11 @@ import { useGame, ChatPanel, UpdateBanner } from 'digital-boardgame-framework/cl
 import type { Action, GameState, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { ActionPanel, tname } from './ActionPanel';
+import { ArtBoard } from './ArtBoard';
+import { useArtLoaded } from './artCache';
 import { Board } from './Board';
 import { makeChatClient, makeClient, savedTokens } from './client';
+import { LoadArtModal } from './LoadArtModal';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
 
 declare const __DBF_BUILD_ID__: string;
@@ -17,6 +20,12 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   const chatClient = useMemo(() => makeChatClient(gameId, token), [gameId, token]);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedUnits, setSelectedUnits] = useState<number[]>([]);
+  const artLoaded = useArtLoaded();
+  const [artModal, setArtModal] = useState(false);
+  const [boardStyle, setBoardStyle] = useState<'map' | 'art'>(
+    () => (localStorage.getItem('aa-board-style') as 'map' | 'art') ?? 'art',
+  );
+  const useArt = artLoaded && boardStyle === 'art';
 
   const view = game.view;
   if (game.error && !view) return <Center>Failed to load: {String(game.error)}</Center>;
@@ -36,12 +45,40 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
       <UpdateBanner currentBuild={__DBF_BUILD_ID__} />
       <div style={{ flex: '1 1 65%', minWidth: 0 }}>
         <Header view={view} you={you} wallet={wallet} token={token} setToken={setToken} />
-        <Board
-          state={view}
-          selected={selected}
-          highlights={new Set<string>()}
-          onClickTerritory={clickTerritory}
-        />
+        {useArt ? (
+          <ArtBoard state={view} selected={selected} onClickTerritory={clickTerritory} />
+        ) : (
+          <Board
+            state={view}
+            selected={selected}
+            highlights={new Set<string>()}
+            onClickTerritory={clickTerritory}
+          />
+        )}
+        <div style={{ fontSize: 13, marginTop: 4 }}>
+          {artLoaded ? (
+            <button style={{ background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
+              onClick={() => {
+                const next = boardStyle === 'art' ? 'map' : 'art';
+                setBoardStyle(next);
+                localStorage.setItem('aa-board-style', next);
+              }}>
+              Switch to {boardStyle === 'art' ? 'simple map' : 'classic art'}
+            </button>
+          ) : (
+            <button style={{ background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
+              onClick={() => setArtModal(true)}>
+              Load classic board art (from your VASSAL module)…
+            </button>
+          )}
+          {artLoaded && (
+            <button style={{ background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
+              onClick={() => setArtModal(true)}>
+              art settings
+            </button>
+          )}
+        </div>
+        {artModal && <LoadArtModal onClose={() => setArtModal(false)} />}
         {selected && (
           <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
             <b>{tname(selected)}</b>
