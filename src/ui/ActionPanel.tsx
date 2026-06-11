@@ -16,16 +16,25 @@ const BUYABLE: UnitType[] = ['infantry', 'armor', 'fighter', 'bomber', 'transpor
 
 export function tname(tid: string): string { return TERR[tid]?.name ?? tid; }
 
-/** Shortest path over the board graph (client-side mirror of the engine BFS;
- * the server re-validates, so an imperfect path just gets a clear rejection). */
-export function shortestPath(from: string, to: string, avoidNeutrals: string[]): string[] | null {
+/** Shortest path over the board graph, restricted to the moving unit's domain
+ * (land units never route through sea zones, ships never through land; air
+ * flies over anything). Client-side mirror of the engine BFS — the server
+ * re-validates, so an imperfect path just gets a clear rejection. */
+export function shortestPath(
+  from: string, to: string, avoidNeutrals: string[],
+  domain: 'land' | 'sea' | 'air' = 'air',
+): string[] | null {
   if (from === to) return [from];
+  const ok = (t: string) =>
+    domain === 'air' ? true : domain === 'land' ? !TERR[t].water : TERR[t].water;
   const parent = new Map<string, string>([[from, '']]);
   const queue = [from];
   while (queue.length) {
     const cur = queue.shift()!;
     for (const n of TERR[cur]?.connections ?? []) {
       if (parent.has(n) || avoidNeutrals.includes(n)) continue;
+      if (n !== to && !ok(n)) continue;
+      if (n === to && !ok(n)) continue;
       parent.set(n, cur);
       if (n === to) {
         const path = [to];
@@ -176,18 +185,22 @@ function MovePanel({
   const phase = view.phase;
   const units = selected ? view.territories[selected].units.filter((u) => u.owner === you) : [];
   const chosen = units.filter((u) => selectedUnits.includes(u.id));
+  const domain = chosen.length > 0 ? (UNITS[chosen[0].type].domain as 'land' | 'sea' | 'air') : 'air';
   const destOptions = useMemo(() => {
     if (!selected || chosen.length === 0) return [];
     const maxMove = Math.min(...chosen.map((u) => UNITS[u.type].move));
-    // offer everything within range; server validates the rest
+    // offer everything within range over the unit's own domain (land units
+    // never route through sea zones, ships never over land; air over anything)
+    const passable = (t: string) =>
+      domain === 'air' ? true : domain === 'land' ? !TERR[t].water : TERR[t].water;
     const out: { tid: string; dist: number }[] = [];
     const seen = new Map<string, number>([[selected, 0]]);
     let frontier = [selected];
-    for (let d = 1; d <= Math.max(maxMove, 1) + 2; d++) {
+    for (let d = 1; d <= Math.max(maxMove, 1); d++) {
       const next: string[] = [];
       for (const cur of frontier) {
         for (const n of TERR[cur].connections) {
-          if (seen.has(n)) continue;
+          if (seen.has(n) || !passable(n)) continue;
           seen.set(n, d);
           out.push({ tid: n, dist: d });
           next.push(n);
@@ -237,7 +250,7 @@ function MovePanel({
               )}
               <button style={primary} disabled={!dest}
                 onClick={() => {
-                  const path = shortestPath(selected, dest, phase === 'noncombat' ? view.neutrals : []);
+                  const path = shortestPath(selected, dest, phase === 'noncombat' ? view.neutrals : [], domain);
                   if (!path) return;
                   act({ kind: 'move', unitIds: chosen.map((u) => u.id), path, ...(sbr ? { sbr: true } : {}) });
                 }}>
