@@ -74,22 +74,44 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
   const [ax, ay] = VB.anchors[tid];
   const x = Math.max(0, Math.min(VB.width - CROP_W, ax - CROP_W / 2));
   const y = Math.max(0, Math.min(VB.height - CROP_H, ay - CROP_H / 2));
-  const rows = unitRows(state.territories[tid]?.units ?? []);
-  const SPRITE = 44;
+  const SPRITE = 40;
+  // render every stack whose anchor falls inside the crop — the close-up must
+  // match the main board exactly, or neighbors' stacks get misattributed
+  const visible = Object.entries(VB.anchors).filter(([, [px, py]]) =>
+    px > x - SPRITE && px < x + CROP_W + SPRITE && py > y - SPRITE && py < y + CROP_H + SPRITE);
   return (
     <svg viewBox={`${x} ${y} ${CROP_W} ${CROP_H}`} style={{ width: '100%', borderRadius: 6 }}>
       <image href={mapUrl} width={VB.width} height={VB.height} />
       <circle cx={ax} cy={ay} r={50} fill="none" stroke="#fff" strokeWidth={3} strokeDasharray="9 6" opacity={0.8} />
-      {rows.flatMap((r, ri) =>
-        [...new Set((state.territories[tid]?.units ?? []).filter((u) => u.owner === r.owner).map((u) => u.type))]
-          .map((type, i) => {
-            const url = artUrl(unitArtCandidates(type, r.owner));
-            if (!url) return null;
-            const px = ax - SPRITE + i * SPRITE * 0.9;
-            const py = ay - SPRITE / 2 + ri * SPRITE * 0.7;
-            return <image key={`${r.owner}:${type}`} href={url} x={px} y={py} width={SPRITE} height={SPRITE} preserveAspectRatio="xMidYMid meet" />;
-          }),
-      )}
+      {visible.map(([t, [px, py]]) => {
+        const units = state.territories[t]?.units ?? [];
+        if (units.length === 0) return null;
+        const rows = unitRows(units);
+        const types = rows.flatMap((r) =>
+          [...new Set(units.filter((u) => u.owner === r.owner).map((u) => u.type))]
+            .map((type) => ({ type, owner: r.owner })));
+        const left = px - (Math.min(types.length, 3) * SPRITE * 0.9) / 2;
+        return (
+          <g key={t} opacity={t === tid ? 1 : 0.85}>
+            {types.map((s, i) => {
+              const url = artUrl(unitArtCandidates(s.type, s.owner));
+              if (!url) return null;
+              const ux = left + (i % 3) * SPRITE * 0.9;
+              const uy = py - SPRITE / 2 + Math.floor(i / 3) * SPRITE * 0.85;
+              const n = units.filter((u) => u.owner === s.owner && u.type === s.type).length;
+              return (
+                <g key={`${s.owner}:${s.type}`}>
+                  <image href={url} x={ux} y={uy} width={SPRITE} height={SPRITE} preserveAspectRatio="xMidYMid meet" />
+                  {n > 1 && (
+                    <text x={ux + SPRITE * 0.9} y={uy + SPRITE * 0.3} fontSize={18} fontWeight={800}
+                      fill="#fff" stroke="#000" strokeWidth={3} paintOrder="stroke">{n}</text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
     </svg>
   );
 }
