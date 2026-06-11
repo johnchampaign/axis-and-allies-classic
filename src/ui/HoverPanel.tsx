@@ -7,6 +7,7 @@ import vassalBoard from '../../data/vassal-board.json';
 import territoriesJson from '../../data/territories.json';
 import type { GameState, Power, Unit } from '../engine/types';
 import { artUrl, MAP_IMAGE, unitArtCandidates } from './artCache';
+import { layoutStack } from './stackLayout';
 import { NEUTRAL_COLOR, POWER_COLOR, POWER_NAME, SEA_COLOR, UNIT_NAME } from './theme';
 
 const GEO = geometry as unknown as {
@@ -101,24 +102,23 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
         const types = rows.flatMap((r) =>
           [...new Set(units.filter((u) => u.owner === r.owner).map((u) => u.type))]
             .map((type) => ({ type, owner: r.owner })));
-        const left = px - (Math.min(types.length, 3) * SPRITE * 0.9) / 2;
+        const cells = layoutStack(t, types.length, SPRITE);
         return (
           <g key={t} opacity={t === tid ? 1 : 0.85}>
             {types.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
               if (!url) return null;
-              const ux = left + (i % 3) * SPRITE * 0.9;
-              const uy = py - SPRITE / 2 + Math.floor(i / 3) * SPRITE * 0.85;
+              const { x: ux, y: uy, size } = cells[i];
               const n = units.filter((u) => u.owner === s.owner && u.type === s.type).length;
               return (
                 <g key={`${s.owner}:${s.type}`}>
-                  <image href={url} x={ux} y={uy} width={SPRITE} height={SPRITE}
+                  <image href={url} x={ux} y={uy} width={size} height={size}
                     preserveAspectRatio="xMidYMid meet" filter="url(#token-outline-closeup)" />
                   {n > 1 && (
                     <g>
-                      <circle cx={ux + SPRITE * 0.85} cy={uy + SPRITE * 0.15} r={SPRITE * 0.22}
+                      <circle cx={ux + size * 0.85} cy={uy + size * 0.15} r={size * 0.22}
                         fill={POWER_COLOR[s.owner]} stroke="#fff" strokeWidth={2} />
-                      <text x={ux + SPRITE * 0.85} y={uy + SPRITE * 0.15 + 6} fontSize={17} fontWeight={800}
+                      <text x={ux + size * 0.85} y={uy + size * 0.15 + size * 0.15} fontSize={size * 0.42} fontWeight={800}
                         textAnchor="middle" fill="#fff">{n}</text>
                     </g>
                   )}

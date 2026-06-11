@@ -5,6 +5,7 @@ import { memo } from 'react';
 import vassalBoard from '../../data/vassal-board.json';
 import type { GameState, Power, Unit, UnitType } from '../engine/types';
 import { artUrl, MAP_IMAGE, unitArtCandidates } from './artCache';
+import { layoutStack } from './stackLayout';
 import { POWER_COLOR } from './theme';
 
 const VB = vassalBoard as unknown as {
@@ -75,35 +76,29 @@ export const ArtBoard = memo(function ArtBoard({
           fill="none" stroke="#fff" strokeWidth={5} strokeDasharray="12 8" opacity={0.9}
         />
       )}
-      {Object.entries(VB.anchors).map(([tid, [ax, ay]]) => {
+      {Object.entries(VB.anchors).map(([tid]) => {
         const units = state.territories[tid]?.units ?? [];
         if (units.length === 0) return null;
         const rows = stacks(units);
-        const cols = Math.min(rows.length, 3);
-        const nRows = Math.ceil(rows.length / 3);
-        const cellW = SPRITE * 0.95;
-        const cellH = SPRITE * 0.92;
-        const left = ax - (cols * cellW) / 2;
-        const top = ay - (nRows * cellH) / 2;
+        const cells = layoutStack(tid, rows.length, SPRITE);
         return (
           <g key={tid} pointerEvents="none">
             {rows.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
-              const x = left + (i % 3) * cellW;
-              const y = top + Math.floor(i / 3) * cellH;
+              const { x, y, size } = cells[i];
               return (
                 <g key={`${s.owner}:${s.type}`}>
                   {url ? (
-                    <image href={url} x={x} y={y} width={SPRITE * 0.9} height={SPRITE * 0.9}
+                    <image href={url} x={x} y={y} width={size} height={size}
                       preserveAspectRatio="xMidYMid meet" filter="url(#token-outline)" />
                   ) : (
-                    <circle cx={x + SPRITE * 0.45} cy={y + SPRITE * 0.45} r={SPRITE / 2.8} fill={POWER_COLOR[s.owner]} stroke="#000" strokeWidth={3} />
+                    <circle cx={x + size / 2} cy={y + size / 2} r={size / 2.8} fill={POWER_COLOR[s.owner]} stroke="#000" strokeWidth={3} />
                   )}
                   {s.count > 1 && (
                     <g>
-                      <circle cx={x + SPRITE * 0.82} cy={y + SPRITE * 0.18} r={SPRITE * 0.21}
+                      <circle cx={x + size * 0.88} cy={y + size * 0.16} r={size * 0.22}
                         fill={POWER_COLOR[s.owner]} stroke="#fff" strokeWidth={3} />
-                      <text x={x + SPRITE * 0.82} y={y + SPRITE * 0.18 + 11} fontSize={32} fontWeight={800}
+                      <text x={x + size * 0.88} y={y + size * 0.16 + size * 0.13} fontSize={size * 0.38} fontWeight={800}
                         textAnchor="middle" fill="#fff">
                         {s.count}
                       </text>
