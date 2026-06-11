@@ -44,6 +44,21 @@ describe('movement', () => {
     expect(s.territories['russia'].owner).toBe('germany');
   });
 
+  it('a lone enemy AA gun does not block a blitz and is captured in passing (spec §13.20)', () => {
+    let s = at('combatMove', 'germany');
+    clear(s, 'karelia-ssr');
+    clear(s, 'russia');
+    const aa = addUnit(s, 'karelia-ssr', 'aaGun', 'russia');
+    const tank = addUnit(s, 'east-europe', 'armor', 'germany');
+    s = apply(s, { kind: 'move', unitIds: [tank.id], path: ['east-europe', 'karelia-ssr', 'russia'] }, 'germany');
+    expect(s.territories['karelia-ssr'].owner).toBe('germany');
+    const capturedAA = s.territories['karelia-ssr'].units.find((u) => u.id === aa.id)!;
+    expect(capturedAA.owner).toBe('germany');
+    // captured AA is immobile the turn it is captured (spec §13.24)
+    s.phase = 'noncombat';
+    expectReject(s, { kind: 'move', unitIds: [aa.id], path: ['karelia-ssr', 'east-europe'] }, 'germany', /already moved/);
+  });
+
   it('tanks cannot blitz through occupied territory', () => {
     const s = at('combatMove', 'germany');
     const tank = addUnit(s, 'east-europe', 'armor', 'germany');

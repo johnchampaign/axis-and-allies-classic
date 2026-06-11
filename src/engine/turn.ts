@@ -24,7 +24,10 @@ export function captureTerritory(
 
   // captured AA guns & factories change hands (spec §6.6)
   for (const u of ts.units) {
-    if (u.type === 'aaGun' && isEnemy(u.owner, actor)) u.owner = actor;
+    if (u.type === 'aaGun' && isEnemy(u.owner, actor)) {
+      u.owner = actor;
+      u.movedPhase = 'noncombat'; // immobile the turn it is captured (spec §13.24)
+    }
     if (u.type === 'factory' && isEnemy(u.owner, actor)) {
       u.owner = actor;
       u.factoryLimited = true; // captured complexes have limited production (spec §9.3)

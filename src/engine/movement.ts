@@ -88,9 +88,11 @@ function moveLand(
     const mid = a.path[1];
     const midFriendly = isFriendlySpace(state, mid, actor);
     const midNeutral = state.neutrals.includes(mid);
-    const midEnemyOccupied = isEnemyOccupied(state, mid, actor);
+    // a lone enemy AA gun / complex does not block a blitz — the territory counts as
+    // unoccupied and the pieces are captured in passing (spec §13.20)
+    const midDefended = enemyCombatUnits(state, mid, actor).length > 0;
     if (!midFriendly) {
-      if (midNeutral || midEnemyOccupied) return no('tanks cannot blitz through occupied or neutral territory');
+      if (midNeutral || midDefended) return no('tanks cannot blitz through occupied or neutral territory');
       // blitz: enemy-controlled & unoccupied — capture in passing (spec §4.1)
       captureTerritory(state, mid, actor, units);
     }
