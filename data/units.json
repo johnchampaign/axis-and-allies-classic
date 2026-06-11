@@ -1,0 +1,15 @@
+{
+  "_provenance": "hand-authored from the Classic 2nd-edition rulebook unit chart; cross-checked against TripleA classic.xml production frontier (costs match)",
+  "units": {
+    "infantry":   { "name": "Infantry",           "cost": 3,  "attack": 1, "defense": 2, "move": 1, "domain": "land", "transportCost": 1 },
+    "armor":      { "name": "Armor",              "cost": 5,  "attack": 3, "defense": 2, "move": 2, "domain": "land", "transportCost": 2, "canBlitz": true },
+    "fighter":    { "name": "Fighter",            "cost": 12, "attack": 3, "defense": 4, "move": 4, "domain": "air",  "carrierCost": 1 },
+    "bomber":     { "name": "Bomber",             "cost": 15, "attack": 4, "defense": 1, "move": 6, "domain": "air",  "isStrategicBomber": true },
+    "transport":  { "name": "Transport",          "cost": 8,  "attack": 0, "defense": 1, "move": 2, "domain": "sea",  "transportCapacity": 2 },
+    "submarine":  { "name": "Submarine",          "cost": 8,  "attack": 2, "defense": 2, "move": 2, "domain": "sea",  "isSub": true },
+    "carrier":    { "name": "Aircraft Carrier",   "cost": 18, "attack": 1, "defense": 3, "move": 2, "domain": "sea",  "carrierCapacity": 2 },
+    "battleship": { "name": "Battleship",         "cost": 24, "attack": 4, "defense": 4, "move": 2, "domain": "sea",  "canBombard": true },
+    "aaGun":      { "name": "Antiaircraft Gun",   "cost": 5,  "attack": 0, "defense": 0, "move": 1, "domain": "land", "transportCost": 2, "isAA": true },
+    "factory":    { "name": "Industrial Complex", "cost": 15, "attack": 0, "defense": 0, "move": 0, "domain": "land", "isFactory": true }
+  }
+}
