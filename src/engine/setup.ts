@@ -3,7 +3,7 @@ import { ALL_TERRITORY_IDS, SETUP, TERRITORIES } from './data';
 import type { GameState, Power, TerritoryState, Unit } from './types';
 import { SIDE_OF, TURN_ORDER } from './types';
 
-export function createGame(seed: number): GameState {
+export function createGame(seed: number, ai: Power[] = []): GameState {
   const territories: Record<string, TerritoryState> = {};
   const neutrals: string[] = [];
   for (const id of ALL_TERRITORY_IDS) {
@@ -47,6 +47,7 @@ export function createGame(seed: number): GameState {
     winner: null,
     winReason: null,
     log: ['Game start.'],
+    ai,
   };
   beginTurnSnapshot(state);
   return state;

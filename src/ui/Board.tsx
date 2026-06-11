@@ -35,12 +35,13 @@ function tallies(units: Unit[]): { owner: Power; text: string }[] {
 }
 
 export const Board = memo(function Board({
-  state, selected, highlights, onClickTerritory,
+  state, selected, highlights, onClickTerritory, onHoverTerritory,
 }: {
   state: GameState;
   selected: string | null;
   highlights: Set<string>;
   onClickTerritory: (tid: string) => void;
+  onHoverTerritory?: (tid: string | null) => void;
 }) {
   return (
     <svg
@@ -48,7 +49,13 @@ export const Board = memo(function Board({
       style={{ width: '100%', height: 'auto', background: SEA_COLOR, borderRadius: 8 }}
     >
       {Object.entries(GEO.territories).map(([tid, g]) => (
-        <g key={tid} onClick={() => onClickTerritory(tid)} style={{ cursor: 'pointer' }}>
+        <g
+          key={tid}
+          onClick={() => onClickTerritory(tid)}
+          onMouseEnter={() => onHoverTerritory?.(tid)}
+          onMouseLeave={() => onHoverTerritory?.(null)}
+          style={{ cursor: 'pointer' }}
+        >
           {g.polygons.map((poly, i) => (
             <polygon
               key={i}

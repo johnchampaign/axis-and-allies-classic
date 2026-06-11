@@ -42,6 +42,10 @@ function getSupabase(env: Env): SupabaseClient {
   return _supabase;
 }
 
+export function makeStore(env: Env): SupabaseStore {
+  return new SupabaseStore(getSupabase(env));
+}
+
 function makeNotifier(env: Env) {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM) return new NoopNotifier();
   return new ResendNotifier({ apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM });

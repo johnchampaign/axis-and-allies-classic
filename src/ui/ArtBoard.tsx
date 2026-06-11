@@ -24,35 +24,37 @@ function stacks(units: Unit[]): { type: UnitType; owner: Power; count: number }[
   return [...m.values()];
 }
 
+function nearestAnchor(e: React.MouseEvent<SVGSVGElement>): string | null {
+  const r = e.currentTarget.getBoundingClientRect();
+  const x = ((e.clientX - r.left) / r.width) * VB.width;
+  const y = ((e.clientY - r.top) / r.height) * VB.height;
+  let best: string | null = null;
+  let bestD = PICK_RADIUS;
+  for (const [tid, [ax, ay]] of Object.entries(VB.anchors)) {
+    const d = Math.hypot(ax - x, ay - y);
+    if (d < bestD) { bestD = d; best = tid; }
+  }
+  return best;
+}
+
 export const ArtBoard = memo(function ArtBoard({
-  state, selected, onClickTerritory,
+  state, selected, onClickTerritory, onHoverTerritory,
 }: {
   state: GameState;
   selected: string | null;
   onClickTerritory: (tid: string) => void;
+  onHoverTerritory?: (tid: string | null) => void;
 }) {
   const mapUrl = artUrl([MAP_IMAGE]);
   if (!mapUrl) return null;
-
-  const click = (e: React.MouseEvent<SVGSVGElement>) => {
-    const svg = e.currentTarget;
-    const r = svg.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * VB.width;
-    const y = ((e.clientY - r.top) / r.height) * VB.height;
-    let best: string | null = null;
-    let bestD = PICK_RADIUS;
-    for (const [tid, [ax, ay]] of Object.entries(VB.anchors)) {
-      const d = Math.hypot(ax - x, ay - y);
-      if (d < bestD) { bestD = d; best = tid; }
-    }
-    if (best) onClickTerritory(best);
-  };
 
   return (
     <svg
       viewBox={`0 0 ${VB.width} ${VB.height}`}
       style={{ width: '100%', height: 'auto', borderRadius: 8, cursor: 'pointer' }}
-      onClick={click}
+      onClick={(e) => { const t = nearestAnchor(e); if (t) onClickTerritory(t); }}
+      onMouseMove={(e) => onHoverTerritory?.(nearestAnchor(e))}
+      onMouseLeave={() => onHoverTerritory?.(null)}
     >
       <image href={mapUrl} width={VB.width} height={VB.height} />
       {selected && VB.anchors[selected] && (

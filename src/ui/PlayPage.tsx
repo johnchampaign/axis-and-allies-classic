@@ -7,6 +7,7 @@ import { ArtBoard } from './ArtBoard';
 import { useArtLoaded } from './artCache';
 import { Board } from './Board';
 import { makeChatClient, makeClient, savedTokens } from './client';
+import { HoverPanel } from './HoverPanel';
 import { LoadArtModal } from './LoadArtModal';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
 
@@ -22,6 +23,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   const [selectedUnits, setSelectedUnits] = useState<number[]>([]);
   const artLoaded = useArtLoaded();
   const [artModal, setArtModal] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
   const [boardStyle, setBoardStyle] = useState<'map' | 'art'>(
     () => (localStorage.getItem('aa-board-style') as 'map' | 'art') ?? 'art',
   );
@@ -46,13 +48,14 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
       <div style={{ flex: '1 1 65%', minWidth: 0 }}>
         <Header view={view} you={you} wallet={wallet} token={token} setToken={setToken} />
         {useArt ? (
-          <ArtBoard state={view} selected={selected} onClickTerritory={clickTerritory} />
+          <ArtBoard state={view} selected={selected} onClickTerritory={clickTerritory} onHoverTerritory={setHovered} />
         ) : (
           <Board
             state={view}
             selected={selected}
             highlights={new Set<string>()}
             onClickTerritory={clickTerritory}
+            onHoverTerritory={setHovered}
           />
         )}
         <div style={{ fontSize: 13, marginTop: 4 }}>
@@ -121,6 +124,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         <div style={{ marginTop: 10 }}>
           <ChatPanel client={chatClient} you={you} seatLabel={(s) => POWER_NAME[s as Power] ?? s} />
         </div>
+        <HoverPanel state={view} tid={hovered ?? selected} artActive={useArt} />
       </div>
     </div>
   );

@@ -123,6 +123,8 @@ export interface GameState {
   winner: Side | null;
   winReason: string | null;
   log: string[];
+  /** Powers played by the server AI (random legal moves). Set at game creation. */
+  ai?: Power[];
 }
 
 export type Action =
