@@ -56,6 +56,18 @@ export const ArtBoard = memo(function ArtBoard({
       onMouseMove={(e) => onHoverTerritory?.(nearestAnchor(e))}
       onMouseLeave={() => onHoverTerritory?.(null)}
     >
+      <defs>
+        {/* sticker-style outline: dilate the sprite's alpha and flood it white */}
+        <filter id="token-outline" x="-20%" y="-20%" width="140%" height="140%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="3" result="dilated" />
+          <feFlood floodColor="#ffffff" floodOpacity="0.95" result="edge" />
+          <feComposite in="edge" in2="dilated" operator="in" result="outline" />
+          <feMerge>
+            <feMergeNode in="outline" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
       {selected && VB.anchors[selected] && (
         <circle
@@ -75,11 +87,6 @@ export const ArtBoard = memo(function ArtBoard({
         const top = ay - (nRows * cellH) / 2;
         return (
           <g key={tid} pointerEvents="none">
-            {/* backing plate so pieces pop against busy map art */}
-            <rect
-              x={left - 8} y={top - 8} width={cols * cellW + 16} height={nRows * cellH + 16}
-              rx={14} fill="#000" opacity={0.35}
-            />
             {rows.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
               const x = left + (i % 3) * cellW;
@@ -87,7 +94,8 @@ export const ArtBoard = memo(function ArtBoard({
               return (
                 <g key={`${s.owner}:${s.type}`}>
                   {url ? (
-                    <image href={url} x={x} y={y} width={SPRITE * 0.9} height={SPRITE * 0.9} preserveAspectRatio="xMidYMid meet" />
+                    <image href={url} x={x} y={y} width={SPRITE * 0.9} height={SPRITE * 0.9}
+                      preserveAspectRatio="xMidYMid meet" filter="url(#token-outline)" />
                   ) : (
                     <circle cx={x + SPRITE * 0.45} cy={y + SPRITE * 0.45} r={SPRITE / 2.8} fill={POWER_COLOR[s.owner]} stroke="#000" strokeWidth={3} />
                   )}
