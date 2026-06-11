@@ -1,0 +1,8 @@
+node_modules/
+dist/
+vmod_extracted/
+*.vmod
+*.pdf
+public/dev-assets/
+.env
+.env.*
