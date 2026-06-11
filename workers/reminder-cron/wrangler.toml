@@ -1,0 +1,12 @@
+# Stale-turn-reminder cron Worker (pattern from Star Wars Rebellion).
+name = "aa-classic-reminder-cron"
+main = "index.ts"
+compatibility_date = "2025-09-01"
+
+# Every 30 minutes; the sweep nudges a player once their turn is idle ≥ 6h,
+# so this cadence adds at most half an hour of observation lag.
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+SWEEP_URL = "https://axis-and-allies-classic.pages.dev/api/cron/sweep-reminders"
