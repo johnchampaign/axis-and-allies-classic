@@ -4,9 +4,10 @@
 import { memo } from 'react';
 import vassalBoard from '../../data/vassal-board.json';
 import type { GameState, Power, Unit, UnitType } from '../engine/types';
-import { artUrl, MAP_IMAGE, unitArtCandidates } from './artCache';
+import { artUrl, MAP_IMAGE, markerArtCandidates, unitArtCandidates } from './artCache';
 import { layoutStack } from './stackLayout';
 import { POWER_COLOR } from './theme';
+import { TERRITORIES } from '../engine/data';
 
 const VB = vassalBoard as unknown as {
   width: number; height: number; anchors: Record<string, [number, number]>;
@@ -77,12 +78,28 @@ export const ArtBoard = memo(function ArtBoard({
         />
       )}
       {Object.entries(VB.anchors).map(([tid]) => {
-        const units = state.territories[tid]?.units ?? [];
-        if (units.length === 0) return null;
+        const ts = state.territories[tid];
+        const units = ts?.units ?? [];
+        // control marker on captured land (owner differs from the printed map)
+        const original = TERRITORIES[tid]?.originalOwner ?? null;
+        const captured = ts?.owner && !TERRITORIES[tid]?.water && ts.owner !== original;
+        if (units.length === 0 && !captured) return null;
         const rows = stacks(units);
-        const cells = layoutStack(tid, rows.length, SPRITE);
+        const cells = layoutStack(tid, rows.length + (captured ? 1 : 0), SPRITE);
+        const markerCell = captured ? cells[rows.length] : null;
         return (
           <g key={tid} pointerEvents="none">
+            {captured && markerCell && (() => {
+              const url = artUrl(markerArtCandidates(ts!.owner!));
+              const m = markerCell;
+              return url ? (
+                <image href={url} x={m.x} y={m.y} width={m.size * 0.8} height={m.size * 0.8}
+                  preserveAspectRatio="xMidYMid meet" filter="url(#token-outline)" />
+              ) : (
+                <circle cx={m.x + m.size / 2} cy={m.y + m.size / 2} r={m.size / 3}
+                  fill={POWER_COLOR[ts!.owner!]} stroke="#fff" strokeWidth={4} />
+              );
+            })()}
             {rows.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
               const { x, y, size } = cells[i];

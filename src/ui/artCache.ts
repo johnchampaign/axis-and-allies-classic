@@ -42,6 +42,14 @@ export function unitArtCandidates(type: UnitType, power: Power): string[] {
 }
 export const MAP_IMAGE = 'map.png';
 
+/** National control markers (placed on captured territories, rulebook p. 5). */
+export function markerArtCandidates(power: Power): string[] {
+  const w: Record<Power, string> = {
+    russia: 'Russian', germany: 'German', uk: 'UK', japan: 'Japan', usa: 'US',
+  };
+  return [`${w[power]} marker.png.gif`];
+}
+
 // --- IndexedDB plumbing ---
 function openDb(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {

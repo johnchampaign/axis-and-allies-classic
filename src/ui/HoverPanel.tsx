@@ -6,7 +6,7 @@ import geometry from '../../data/board-geometry.json';
 import vassalBoard from '../../data/vassal-board.json';
 import territoriesJson from '../../data/territories.json';
 import type { GameState, Power, Unit } from '../engine/types';
-import { artUrl, MAP_IMAGE, unitArtCandidates } from './artCache';
+import { artUrl, MAP_IMAGE, markerArtCandidates, unitArtCandidates } from './artCache';
 import { layoutStack } from './stackLayout';
 import { NEUTRAL_COLOR, POWER_COLOR, POWER_NAME, SEA_COLOR, UNIT_NAME } from './theme';
 
@@ -96,15 +96,30 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
       <image href={mapUrl} width={VB.width} height={VB.height} />
       <circle cx={ax} cy={ay} r={50} fill="none" stroke="#fff" strokeWidth={3} strokeDasharray="9 6" opacity={0.8} />
       {visible.map(([t, [px, py]]) => {
-        const units = state.territories[t]?.units ?? [];
-        if (units.length === 0) return null;
+        const ts = state.territories[t];
+        const units = ts?.units ?? [];
+        const original = (TERR[t]?.originalOwner ?? null) as Power | null;
+        const captured = ts?.owner && !TERR[t]?.water && ts.owner !== original;
+        if (units.length === 0 && !captured) return null;
         const rows = unitRows(units);
         const types = rows.flatMap((r) =>
           [...new Set(units.filter((u) => u.owner === r.owner).map((u) => u.type))]
             .map((type) => ({ type, owner: r.owner })));
-        const cells = layoutStack(t, types.length, SPRITE);
+        const cells = layoutStack(t, types.length + (captured ? 1 : 0), SPRITE);
+        const markerCell = captured ? cells[types.length] : null;
         return (
           <g key={t} opacity={t === tid ? 1 : 0.85}>
+            {captured && markerCell && (() => {
+              const murl = artUrl(markerArtCandidates(ts!.owner!));
+              return murl ? (
+                <image href={murl} x={markerCell.x} y={markerCell.y}
+                  width={markerCell.size * 0.8} height={markerCell.size * 0.8}
+                  preserveAspectRatio="xMidYMid meet" filter="url(#token-outline-closeup)" />
+              ) : (
+                <circle cx={markerCell.x + markerCell.size / 2} cy={markerCell.y + markerCell.size / 2}
+                  r={markerCell.size / 3} fill={POWER_COLOR[ts!.owner!]} stroke="#fff" strokeWidth={3} />
+              );
+            })()}
             {types.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
               if (!url) return null;
