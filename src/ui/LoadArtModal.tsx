@@ -42,7 +42,10 @@ export function LoadArtModal({ onClose }: { onClose: () => void }) {
             Axis &amp; Allies VASSAL module
           </a>{' '}
           (<a href={VMOD_FILE_URL} style={{ color: '#8ec5ff' }}>direct download, ~9 MB</a>).
-          The images are extracted in your browser and stay on your device.
+          The images are extracted in your browser and stay on your device — you only do
+          this once per browser. (Heads-up: the cache is tied to the site address, so always
+          use <code>axis-and-allies-classic.pages.dev</code>; deployment-preview URLs each
+          have their own empty cache.)
         </p>
         <label
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}

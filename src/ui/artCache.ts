@@ -136,6 +136,9 @@ export async function loadVmodFromFile(
     if (!e.dir && /\.(png|gif|jpe?g)$/i.test(e.name)) entries.push(e);
   });
   if (entries.length === 0) throw new Error('No images found inside that archive — is it the Axis & Allies .vmod?');
+  // ask the browser not to evict our origin's storage under pressure
+  // (Chrome may otherwise clear IndexedDB silently after weeks of disuse)
+  try { void navigator.storage?.persist?.(); } catch { /* optional */ }
   let done = 0;
   for (const e of entries) {
     const basename = e.name.split('/').pop()!;
