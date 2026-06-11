@@ -79,13 +79,13 @@ export const Board = memo(function Board({
               <text
                 key={r.owner}
                 x={g.center[0]}
-                y={g.center[1] + i * 30}
+                y={g.center[1] + i * 44}
                 textAnchor="middle"
-                fontSize={28}
-                fontWeight={700}
-                fill="#fff"
+                fontSize={42}
+                fontWeight={800}
+                fill={POWER_COLOR[r.owner]}
                 stroke="#000"
-                strokeWidth={4}
+                strokeWidth={6}
                 paintOrder="stroke"
               >
                 {r.text}

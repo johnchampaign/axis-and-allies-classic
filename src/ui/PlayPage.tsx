@@ -24,6 +24,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   const artLoaded = useArtLoaded();
   const [artModal, setArtModal] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
   const [boardStyle, setBoardStyle] = useState<'map' | 'art'>(
     () => (localStorage.getItem('aa-board-style') as 'map' | 'art') ?? 'art',
   );
@@ -47,18 +48,35 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
       <UpdateBanner currentBuild={__DBF_BUILD_ID__} />
       <div style={{ flex: '1 1 65%', minWidth: 0 }}>
         <Header view={view} you={you} wallet={wallet} token={token} setToken={setToken} />
-        {useArt ? (
-          <ArtBoard state={view} selected={selected} onClickTerritory={clickTerritory} onHoverTerritory={setHovered} />
-        ) : (
-          <Board
-            state={view}
-            selected={selected}
-            highlights={new Set<string>()}
-            onClickTerritory={clickTerritory}
-            onHoverTerritory={setHovered}
-          />
-        )}
+        <div style={{ overflow: zoom > 1 ? 'auto' : 'hidden', maxHeight: '78vh', borderRadius: 8 }}>
+          <div style={{ width: `${zoom * 100}%` }}>
+            {useArt ? (
+              <ArtBoard state={view} selected={selected} onClickTerritory={clickTerritory} onHoverTerritory={setHovered} />
+            ) : (
+              <Board
+                state={view}
+                selected={selected}
+                highlights={new Set<string>()}
+                onClickTerritory={clickTerritory}
+                onHoverTerritory={setHovered}
+              />
+            )}
+          </div>
+        </div>
         <div style={{ fontSize: 13, marginTop: 4 }}>
+          <span style={{ marginRight: 8 }}>
+            zoom{' '}
+            {[1, 1.5, 2, 3].map((z) => (
+              <button key={z}
+                style={{
+                  background: zoom === z ? '#3d5166' : 'none', color: '#8ab',
+                  border: '1px solid #345', borderRadius: 4, margin: 1, cursor: 'pointer',
+                }}
+                onClick={() => setZoom(z)}>
+                {z}×
+              </button>
+            ))}
+          </span>
           {artLoaded ? (
             <button style={{ background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
               onClick={() => {
