@@ -4,6 +4,7 @@
 // continues if the cap was hit, so a stalled AI self-heals.
 import { jsonCodec } from 'digital-boardgame-framework';
 import { SupabaseBroadcaster, type SnapshotStore } from 'digital-boardgame-framework/server';
+import { chooseAction } from '../../src/ai/heuristic';
 import { axisAndAlliesAdapter as adapter } from '../../src/engine/adapter';
 import type { GameState } from '../../src/engine/types';
 import type { Env } from './gameServer';
@@ -32,14 +33,23 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
   while (steps < MAX_STEPS) {
     const actor = adapter.currentActor(state);
     if (!actor || !ai.includes(actor)) break;
-    const legal = adapter.legalActions(state, actor);
-    if (legal.length === 0) break; // shouldn't happen; bail rather than spin
-    // Math.random is fine here: it picks WHICH action; the engine's own dice
-    // remain seeded/deterministic inside the state.
-    const action = legal[Math.floor(Math.random() * legal.length)];
-    const r = adapter.tryApplyAction!(state, action, actor);
-    if (!r.ok) break; // adapter contract violation — leave for triage, don't spin
-    state = r.state;
+    // heuristic first; fall back to a random legal action if it has no idea or
+    // its suggestion is rejected (never let the AI wedge a live game).
+    // Math.random only picks WHICH action; the engine dice stay seeded in-state.
+    let applied = false;
+    const suggestion = chooseAction(state, actor);
+    if (suggestion) {
+      const r = adapter.tryApplyAction!(state, suggestion, actor);
+      if (r.ok) { state = r.state; applied = true; }
+    }
+    if (!applied) {
+      const legal = adapter.legalActions(state, actor);
+      if (legal.length === 0) break; // shouldn't happen; bail rather than spin
+      const action = legal[Math.floor(Math.random() * legal.length)];
+      const r = adapter.tryApplyAction!(state, action, actor);
+      if (!r.ok) break; // adapter contract violation — leave for triage, don't spin
+      state = r.state;
+    }
     steps++;
   }
   if (steps === 0) return false;

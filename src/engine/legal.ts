@@ -104,7 +104,7 @@ function purchaseActions(state: GameState, actor: Power): Action[] {
 }
 
 /** Shortest path (BFS) for air movement; returns null if unreachable within max. */
-function airPath(state: GameState, from: string, to: string, max: number, noncombat: boolean): string[] | null {
+export function airPath(state: GameState, from: string, to: string, max: number, noncombat: boolean): string[] | null {
   if (from === to) return null;
   const parent = new Map<string, string>([[from, '']]);
   let frontier = [from];
