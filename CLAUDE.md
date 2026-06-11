@@ -44,5 +44,12 @@ no UI before the headless soak passes.
 - Framework via npm (`^0.8.2`), never `file:` links.
 - Game-specific code only here; framework gaps go to the framework repo's
   `framework-fit-notes.md`.
-- Deploy target (Phase 2+): Cloudflare Pages + Functions; import Supabase
-  store via subpath, never the server barrel.
+- Deploy: Cloudflare Pages project `axis-and-allies-classic`
+  (https://axis-and-allies-classic.pages.dev), Functions in `functions/api/`,
+  per-request `GameServer` factory in `functions/_lib/gameServer.ts`.
+  Secrets `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are set on the Pages
+  project (shared framework Supabase project; schema + RLS already applied).
+  Local dev: `.dev.vars` (gitignored) + `wrangler pages dev dist`.
+  v0.8.x server barrel is Workers-safe (FsStore lives in `/server/node`).
+  Note: `npx` breaks in this repo path (the `&`); run tools as
+  `node node_modules/<pkg>/bin/...`.

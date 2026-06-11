@@ -1,0 +1,6 @@
+# Cloudflare Pages config. pages_build_output_dir is MANDATORY — without it
+# wrangler silently ignores this file (integration-guide gotcha #1).
+name = "axis-and-allies-classic"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = "dist"
+compatibility_flags = ["nodejs_compat"]

@@ -6,3 +6,4 @@ vmod_extracted/
 public/dev-assets/
 .env
 .env.*
+.dev.vars
