@@ -81,6 +81,17 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
     px > x - SPRITE && px < x + CROP_W + SPRITE && py > y - SPRITE && py < y + CROP_H + SPRITE);
   return (
     <svg viewBox={`${x} ${y} ${CROP_W} ${CROP_H}`} style={{ width: '100%', borderRadius: 6 }}>
+      <defs>
+        <filter id="token-outline-closeup" x="-20%" y="-20%" width="140%" height="140%">
+          <feMorphology in="SourceAlpha" operator="dilate" radius="2" result="dilated" />
+          <feFlood floodColor="#ffffff" floodOpacity="0.95" result="edge" />
+          <feComposite in="edge" in2="dilated" operator="in" result="outline" />
+          <feMerge>
+            <feMergeNode in="outline" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
       <circle cx={ax} cy={ay} r={50} fill="none" stroke="#fff" strokeWidth={3} strokeDasharray="9 6" opacity={0.8} />
       {visible.map(([t, [px, py]]) => {
@@ -101,10 +112,15 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
               const n = units.filter((u) => u.owner === s.owner && u.type === s.type).length;
               return (
                 <g key={`${s.owner}:${s.type}`}>
-                  <image href={url} x={ux} y={uy} width={SPRITE} height={SPRITE} preserveAspectRatio="xMidYMid meet" />
+                  <image href={url} x={ux} y={uy} width={SPRITE} height={SPRITE}
+                    preserveAspectRatio="xMidYMid meet" filter="url(#token-outline-closeup)" />
                   {n > 1 && (
-                    <text x={ux + SPRITE * 0.9} y={uy + SPRITE * 0.3} fontSize={18} fontWeight={800}
-                      fill="#fff" stroke="#000" strokeWidth={3} paintOrder="stroke">{n}</text>
+                    <g>
+                      <circle cx={ux + SPRITE * 0.85} cy={uy + SPRITE * 0.15} r={SPRITE * 0.22}
+                        fill={POWER_COLOR[s.owner]} stroke="#fff" strokeWidth={2} />
+                      <text x={ux + SPRITE * 0.85} y={uy + SPRITE * 0.15 + 6} fontSize={17} fontWeight={800}
+                        textAnchor="middle" fill="#fff">{n}</text>
+                    </g>
                   )}
                 </g>
               );
