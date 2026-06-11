@@ -17,7 +17,7 @@ import { airPath, legalActions } from '../engine/legal';
 import { pendingBattleSpaces } from '../engine/turn';
 import type { Action, GameState, Power, Unit, UnitType } from '../engine/types';
 
-const ATTACK_MARGIN = 1.4; // attack-power : defense-power ratio required to attack
+const ATTACK_MARGIN = 1.25; // attack-power : defense-power ratio required to attack
 
 export function chooseAction(state: GameState, power: Power): Action | null {
   if (state.battle) return battleDecision(state, power);
@@ -82,7 +82,10 @@ function combatMove(state: GameState, p: Power): Action | null {
       return { kind: 'move', unitIds: [spare.id], path: [t, n] };
     }
   }
-  // 2) favorable assault: commit ALL adjacent ground to the weakest worthwhile neighbor
+  // 2) favorable assault: commit adjacent ground, one stack per call, to the
+  // most favorable defended neighbor. Units ALREADY committed (moved into the
+  // target this turn) count toward the attack, so multi-stack assaults keep
+  // reinforcing across calls instead of stalling after the first wave.
   let best: { target: string; from: Map<string, Unit[]>; ratio: number } | null = null;
   for (const [target, ts] of Object.entries(state.territories)) {
     if (def(target).water || state.neutrals.includes(target)) continue;
@@ -91,8 +94,11 @@ function combatMove(state: GameState, p: Power): Action | null {
     if (!enemyHeld) continue;
     const defense = defenseOf(state, target, p);
     if (defense === 0) continue; // handled as walkover above
+    const committed = ts.units
+      .filter((u) => u.owner === p && isCombat(u))
+      .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
     const from = new Map<string, Unit[]>();
-    let attack = 0;
+    let reinforcements = 0;
     for (const n of def(target).connections) {
       if (def(n).water) continue;
       const units = terr(state, n).units.filter((u) =>
@@ -100,17 +106,16 @@ function combatMove(state: GameState, p: Power): Action | null {
         (u.type === 'infantry' || u.type === 'armor'));
       if (units.length > 0) {
         from.set(n, units);
-        attack += units.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+        reinforcements += units.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
       }
     }
-    if (attack === 0) continue;
-    const ratio = attack / defense;
+    if (from.size === 0) continue; // nothing left to send
+    const ratio = (committed + reinforcements) / defense;
     if (ratio >= ATTACK_MARGIN && (!best || ratio > best.ratio)) best = { target, from, ratio };
   }
   if (best) {
     const [fromT, units] = [...best.from.entries()][0];
     return { kind: 'move', unitIds: units.map((u) => u.id), path: [fromT, best.target] };
-    // subsequent calls commit the other adjacent stacks (they'll still see the battle pending)
   }
   return null;
 }
