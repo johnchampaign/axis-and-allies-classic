@@ -637,9 +637,15 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
     for (const tr of ts.units) {
       if (tr.owner !== p || tr.type !== 'transport') continue;
 
-      // 1) loaded & adjacent to a worthwhile enemy coast → assault (combat move only)
+      // 1) loaded & adjacent to a worthwhile enemy coast → assault (combat move only).
+      // Strength counts EVERY loaded friendly transport in this zone — they all
+      // unload into the same battle this turn (single-boat math meant a 5-boat
+      // flotilla never dared attack a 2-defender beach).
       if (tr.cargo.length > 0 && phase === 'combatMove' && !isEnemyOccupied(state, zone, p)) {
-        const cargoUnits = ts.units.filter((u) => tr.cargo.includes(u.id));
+        const flotillaCargoIds = ts.units
+          .filter((u) => u.owner === p && u.type === 'transport' && u.cargo.length > 0)
+          .flatMap((u) => u.cargo);
+        const cargoUnits = ts.units.filter((u) => flotillaCargoIds.includes(u.id));
         const cargoAtk = cargoUnits.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
         for (const t of def(zone).connections) {
           if (def(t).water || state.neutrals.includes(t)) continue;
@@ -685,6 +691,23 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           if (armor.length >= 1 && spares.length >= 2) {
             return { kind: 'load', unitIds: [armor[0].id], transportId: tr.id };
           }
+        }
+        // 3b) nothing to pick up here → sail home: head for the nearest zone
+        // beside an owned coast with surplus troops (live report: the whole US
+        // fleet sat beached and empty in Congo/Wake while Washington held 38)
+        const parents = seaParents(state, zone, p);
+        let bestPath: string[] | null = null;
+        for (const [t, lts] of Object.entries(state.territories)) {
+          if (def(t).water || lts.owner !== p) continue;
+          if (sparesIn(state, p, t).filter((u) => u.type === 'infantry').length < 2) continue;
+          for (const z of def(t).connections) {
+            if (!def(z).water || z === zone) continue;
+            const path = seaPathTo(parents, zone, z);
+            if (path && path.length >= 2 && (!bestPath || path.length < bestPath.length)) bestPath = path;
+          }
+        }
+        if (bestPath) {
+          return { kind: 'move', unitIds: [tr.id], path: bestPath.slice(0, Math.min(3, bestPath.length)) };
         }
       }
     }
