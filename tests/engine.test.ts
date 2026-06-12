@@ -304,6 +304,13 @@ describe('economy', () => {
     expectReject(s, { kind: 'place', type: 'infantry', territory: 'russia' }, 'germany', /owned since turn start/);
   });
 
+  it('weapons development is refused once every technology is owned', () => {
+    const s = at('tech', 'germany', 47);
+    s.techs.germany = ['jetPower', 'rockets', 'superSubs', 'longRangeAircraft', 'industrialTechnology', 'heavyBombers'];
+    expectReject(s, { kind: 'rollTech', dice: 1 }, 'germany', /every technology/);
+    expect(A.legalActions(s, 'germany').some((a) => a.kind === 'rollTech')).toBe(false);
+  });
+
   it('weapons development: a 6 grants a technology', () => {
     // find a seed where one die rolls a 6
     for (let seed = 1; seed < 200; seed++) {

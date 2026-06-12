@@ -78,7 +78,8 @@ function battleActions(state: GameState, actor: Power): Action[] {
 
 function techActions(state: GameState, actor: Power): Action[] {
   const out: Action[] = [{ kind: 'endPhase' }];
-  if (!state.techRolledThisTurn && state.ipcs[actor] >= 5 && !capitalHeldByEnemy(state, actor)) {
+  if (!state.techRolledThisTurn && state.ipcs[actor] >= 5 && !capitalHeldByEnemy(state, actor) &&
+      state.techs[actor].length < 6) {
     out.push({ kind: 'rollTech', dice: 1 });
   }
   return out;

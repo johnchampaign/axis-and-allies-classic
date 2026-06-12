@@ -97,6 +97,9 @@ export function applyRollTech(
 ): EngineResult {
   if (state.phase !== 'tech') return no('weapons development happens before purchasing');
   if (state.techRolledThisTurn) return no('already rolled this turn');
+  if (state.techs[actor].length >= TECH_BY_ROLL.length) {
+    return no('you have already developed every technology');
+  }
   if (!Number.isInteger(a.dice) || a.dice < 1) return no('buy at least one die');
   const cost = a.dice * 5;
   if (state.ipcs[actor] < cost) return no('cannot afford the dice');

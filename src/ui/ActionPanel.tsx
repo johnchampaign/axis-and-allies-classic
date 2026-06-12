@@ -197,25 +197,34 @@ function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: A
   const n = Number.isInteger(dice) && dice > 0 ? dice : 1;
   // explain WHY the roll is unavailable — a silently disabled button reads as
   // "nothing happens" (live playtest report)
-  const blocked = view.techRolledThisTurn
-    ? 'You already made your development attempt this turn — all research dice are bought in one roll (each 6 is a breakthrough).'
-    : cash < n * 5
-      ? `Not enough IPCs: ${n} ${n === 1 ? 'die costs' : 'dice cost'} ${n * 5}, you have ${cash}.`
-      : null;
+  const allTechs = view.techs[you].length >= 6;
+  const blocked = allTechs
+    ? null // handled below — no roll UI at all
+    : view.techRolledThisTurn
+      ? 'You already made your development attempt this turn — all research dice are bought in one roll (each 6 is a breakthrough).'
+      : cash < n * 5
+        ? `Not enough IPCs: ${n} ${n === 1 ? 'die costs' : 'dice cost'} ${n * 5}, you have ${cash}.`
+        : null;
   return (
     <div style={box}>
       <b>Weapons development</b> — {cash} IPCs.
       {view.techs[you].length > 0 && <div>Your techs: {view.techs[you].join(', ')}</div>}
-      <div>
-        <input type="number" min={1} max={Math.floor(cash / 5) || 1} value={dice}
-          onChange={(e) => setDice(Number(e.target.value))} style={{ width: 50 }} />
-        <button style={btn} disabled={!!blocked}
-          onClick={() => act({ kind: 'rollTech', dice: n })}>
-          Roll {n} {n === 1 ? 'die' : 'dice'} ({n * 5} IPCs)
-        </button>
-      </div>
+      {allTechs ? (
+        <div style={{ fontSize: 13, marginTop: 4 }}>
+          🎓 You have developed every technology — nothing left to research.
+        </div>
+      ) : (
+        <div>
+          <input type="number" min={1} max={Math.floor(cash / 5) || 1} value={dice}
+            onChange={(e) => setDice(Number(e.target.value))} style={{ width: 50 }} />
+          <button style={btn} disabled={!!blocked}
+            onClick={() => act({ kind: 'rollTech', dice: n })}>
+            Roll {n} {n === 1 ? 'die' : 'dice'} ({n * 5} IPCs)
+          </button>
+        </div>
+      )}
       {blocked && <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{blocked}</div>}
-      <div style={{ fontSize: 12, opacity: 0.7 }}>Results appear in the game log below the board.</div>
+      {!allTechs && <div style={{ fontSize: 12, opacity: 0.7 }}>Results appear in the game log below the board.</div>}
     </div>
   );
 }
