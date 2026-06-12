@@ -323,6 +323,27 @@ describe('economy', () => {
   });
 });
 
+describe('air range', () => {
+  it('a fighter may attack at max range when a friendly carrier waits in the zone', () => {
+    // live report: 4-space flight into a sea battle rejected as 'no landing
+    // spot' even though the player's carrier (with room) was in that zone
+    let s = at('combatMove', 'japan', 59);
+    clear(s, 'hawaii-sea-zone');
+    addUnit(s, 'hawaii-sea-zone', 'battleship', 'usa'); // the target
+    addUnit(s, 'hawaii-sea-zone', 'carrier', 'japan');  // ride home waiting
+    clear(s, 'philippines');
+    s.territories['philippines'].owner = 'japan';
+    const f = addUnit(s, 'philippines', 'fighter', 'japan');
+    // philippines -> philippines sea -> wake -> midway? use engine pathing via the UI's
+    // route: any 4-step path; let the engine validate
+    s = apply(s, {
+      kind: 'move', unitIds: [f.id],
+      path: ['philippines', 'philippines-sea-zone', 'okinawa-sea-zone', 'wake-island-sea-zone', 'hawaii-sea-zone'],
+    }, 'japan');
+    expect(s.territories['hawaii-sea-zone'].units.some((u) => u.id === f.id)).toBe(true);
+  });
+});
+
 describe('strategic bombing', () => {
   it('SBR drains defender IPCs and never destroys the complex', () => {
     let s = at('combatMove', 'germany', 31);

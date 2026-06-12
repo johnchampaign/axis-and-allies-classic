@@ -117,7 +117,9 @@ export function airDistances(state: GameState, from: string, forNoncombat: boole
  * friendly carrier with room now or reachable by that carrier's remaining move.
  * Carrier-meet is approximated by carrier reach, ignoring future capacity races. */
 export function hasLandingSpot(state: GameState, u: Unit, at: string, budget: number): boolean {
-  if (budget <= 0) return false;
+  // budget 0 is fine when the landing spot is the battle zone itself — a
+  // fighter at max range may land on a friendly carrier where it fought
+  if (budget < 0) return false;
   const dist = airDistances(state, at, true);
   for (const t of state.turnStartFriendly) {
     if (def(t).water) continue;
