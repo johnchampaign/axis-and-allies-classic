@@ -263,19 +263,22 @@ export function applyEndPhase(state: GameState, actor: Power): EngineResult {
   }
 }
 
-/** Spaces still requiring battle: current power's fighting units sharing a space with
- * enemy combat units, or flagged SBR bombers. */
+/** Spaces still requiring battle: current power's combat units sharing a space
+ * with enemy combat units (whether or not they moved this turn — opposing
+ * forces can never share a space peacefully), or flagged SBR bombers. */
 export function pendingBattleSpaces(state: GameState): string[] {
   const p = state.current;
   const out: string[] = [];
   for (const [t, ts] of Object.entries(state.territories)) {
-    const mine = ts.units.filter((u) => u.owner === p && u.fought);
+    const mine = ts.units.filter(
+      (u) => u.owner === p && u.type !== 'factory' && u.type !== 'aaGun',
+    );
     if (mine.length === 0) continue;
     const sbr = mine.some((u) => u.sbr);
     const enemies = ts.units.filter(
-      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && (u.type !== 'aaGun' || false),
+      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && u.type !== 'aaGun',
     );
-    if (sbr || enemies.some((u) => u.type !== 'aaGun')) out.push(t);
+    if (sbr || enemies.length > 0) out.push(t);
   }
   return out;
 }

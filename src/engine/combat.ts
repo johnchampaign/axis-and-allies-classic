@@ -16,13 +16,20 @@ const isAir = (u: Unit) => UNITS[u.type].domain === 'air';
 const isCombatUnit = (u: Unit) => u.type !== 'factory' && u.type !== 'aaGun';
 
 function battleTs(state: GameState) { return terr(state, state.battle!.territory); }
+/** Combatant filter: in naval battles, land units present are transport cargo —
+ * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
+function fights(state: GameState, u: Unit): boolean {
+  if (!isCombatUnit(u)) return false;
+  if (def(state.battle!.territory).water && UNITS[u.type].domain === 'land') return false;
+  return true;
+}
 function attackers(state: GameState): Unit[] {
   const b = state.battle!;
-  return battleTs(state).units.filter((u) => u.owner === b.attacker && isCombatUnit(u));
+  return battleTs(state).units.filter((u) => u.owner === b.attacker && fights(state, u));
 }
 function defenders(state: GameState): Unit[] {
   const b = state.battle!;
-  return battleTs(state).units.filter((u) => isEnemy(u.owner, b.attacker) && isCombatUnit(u));
+  return battleTs(state).units.filter((u) => isEnemy(u.owner, b.attacker) && fights(state, u));
 }
 /** Defending side's casualty chooser: power with most units there (tie: turn order). Deviation
  * from "mutually agree" (spec §6.1) — documented in docs/rules-spec.md deviations. */

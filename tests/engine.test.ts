@@ -193,6 +193,59 @@ describe('transports', () => {
   });
 });
 
+describe('contested spaces', () => {
+  it('a stationary sub sharing a zone with an enemy transport forces a battle', () => {
+    let s = at('combatMove', 'germany', 41);
+    clear(s, 'north-sea-zone');
+    const sub = addUnit(s, 'north-sea-zone', 'submarine', 'germany'); // did not move this turn
+    addUnit(s, 'north-sea-zone', 'transport', 'uk');
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    expect(s.phase).toBe('combat');
+    // ending combat with the zone contested must be illegal
+    expectReject(s, { kind: 'endPhase' }, 'germany', /unresolved battles/);
+    s = apply(s, { kind: 'startBattle', territory: 'north-sea-zone' }, 'germany');
+    let guard = 0;
+    while (s.battle && guard++ < 30) {
+      const acts = A.legalActions(s, A.currentActor(s)!);
+      const cont = acts.find((a) => a.kind === 'continueBattle') ?? acts[0];
+      s = apply(s, cont, A.currentActor(s)!);
+    }
+    // sub attacks at 2 with sneak shot; defenseless-ish transport dies eventually
+    expect(s.territories['north-sea-zone'].units.some((u) => u.id === sub.id)).toBe(true);
+    expect(s.territories['north-sea-zone'].units.some((u) => u.type === 'transport')).toBe(false);
+  });
+
+  it('transport cargo does not fight in naval battles', () => {
+    let s = at('combatMove', 'germany', 43);
+    clear(s, 'north-sea-zone');
+    addUnit(s, 'north-sea-zone', 'submarine', 'germany');
+    addUnit(s, 'north-sea-zone', 'submarine', 'germany');
+    addUnit(s, 'north-sea-zone', 'submarine', 'germany');
+    addUnit(s, 'north-sea-zone', 'battleship', 'germany');
+    const tr = addUnit(s, 'north-sea-zone', 'transport', 'uk');
+    const c1 = addUnit(s, 'north-sea-zone', 'infantry', 'uk');
+    const c2 = addUnit(s, 'north-sea-zone', 'infantry', 'uk');
+    tr.cargo = [c1.id, c2.id];
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    s = apply(s, { kind: 'startBattle', territory: 'north-sea-zone' }, 'germany');
+    // defender pool must be just the transport — cargo not eligible, not firing
+    if (s.battle && s.battle.pendingHits.length > 0) {
+      for (const ph of s.battle.pendingHits) {
+        expect(ph.eligible).not.toContain(c1.id);
+        expect(ph.eligible).not.toContain(c2.id);
+      }
+    }
+    let guard = 0;
+    while (s.battle && guard++ < 30) {
+      const acts = A.legalActions(s, A.currentActor(s)!);
+      const cont = acts.find((a) => a.kind === 'continueBattle') ?? acts[0];
+      s = apply(s, cont, A.currentActor(s)!);
+    }
+    // when the transport dies its cargo dies with it
+    expect(s.territories['north-sea-zone'].units.filter((u) => u.owner === 'uk').length).toBe(0);
+  });
+});
+
 describe('economy', () => {
   it('income equals production level; none when capital enemy-held', () => {
     let s = at('mobilize', 'russia', 19);
