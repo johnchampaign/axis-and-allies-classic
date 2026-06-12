@@ -515,6 +515,30 @@ function noncombat(state: GameState, p: Power): Action | null {
       }
     }
   }
+  // 1b) carrier rescue: sail an idle carrier to a sea zone where own fighters
+  // are stranded beyond capacity (the engine's no-kamikaze check now requires
+  // a real meeting point — this is the AI keeping that promise)
+  for (const [z, ts] of Object.entries(state.territories)) {
+    if (!def(z).water) continue;
+    const fighters = ts.units.filter((u) => u.owner === p && u.type === 'fighter').length;
+    if (fighters === 0) continue;
+    const capacity = ts.units.filter((u) => !isEnemy(u.owner, p) && u.type === 'carrier').length * 2;
+    if (fighters <= capacity) continue;
+    // find an idle own carrier within 2 clear sea moves
+    for (const [cz, cts] of Object.entries(state.territories)) {
+      if (!def(cz).water) continue;
+      const carrier = cts.units.find((u) =>
+        u.owner === p && u.type === 'carrier' && !u.movedPhase && !u.fought);
+      if (!carrier) continue;
+      if (cz === z) continue;
+      const direct = def(cz).connections.includes(z);
+      const mid = direct ? null : def(cz).connections.find((m) =>
+        def(m).water && def(m).connections.includes(z) && !isEnemyOccupied(state, m, p));
+      if (!direct && !mid) continue;
+      if (isEnemyOccupied(state, z, p)) continue;
+      return { kind: 'move', unitIds: [carrier.id], path: direct ? [cz, z] : [cz, mid!, z] };
+    }
+  }
   // 2) defensive powers under threat rally everything toward the capital
   const prof = PROFILES[p];
   if (prof.defendFirst && capitalThreatened(state, p)) {

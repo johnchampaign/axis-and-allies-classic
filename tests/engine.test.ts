@@ -344,6 +344,25 @@ describe('air range', () => {
   });
 });
 
+describe('air range — carrier meeting point', () => {
+  it('rejects a max-range attack on a LAND island when the only "rescue" carrier cannot meet the fighter', () => {
+    // 14 UK fighters died this way in a live game: zero movement left over a
+    // land territory means no carrier can save them
+    let s = at('combatMove', 'uk', 67);
+    clear(s, 'solomon-islands');
+    s.territories['solomon-islands'].owner = 'japan';
+    addUnit(s, 'solomon-islands', 'infantry', 'japan');
+    clear(s, 'solomon-islands-sea-zone');
+    clear(s, 'new-guinea-sea-zone');
+    addUnit(s, 'new-guinea-sea-zone', 'carrier', 'uk'); // 1 zone away — irrelevant, fighter can't move after
+    clear(s, 'australia');
+    const f = addUnit(s, 'australia', 'fighter', 'uk');
+    // australia -> south-australia? route to solomon islands at exactly range 4
+    const path = ['australia', 'north-australia-sea-zone', 'new-guinea-sea-zone', 'solomon-islands-sea-zone', 'solomon-islands'];
+    expectReject(s, { kind: 'move', unitIds: [f.id], path }, 'uk', /no landing spot/);
+  });
+});
+
 describe('strategic bombing', () => {
   it('SBR drains defender IPCs and never destroys the complex', () => {
     let s = at('combatMove', 'germany', 31);

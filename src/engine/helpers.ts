@@ -127,15 +127,29 @@ export function hasLandingSpot(state: GameState, u: Unit, at: string, budget: nu
     if (d !== undefined && d <= budget) return true;
   }
   if (u.type === 'fighter') {
+    // a carrier rescue needs a real MEETING POINT: a water zone the fighter
+    // can still reach (≤ budget) that the carrier can sail to (≤ 2). The old
+    // budget+2 shortcut ignored that a fighter with 0 movement over a land
+    // island can't fly anywhere — 14 fighters died that way in a live game.
     for (const [zone, ts] of Object.entries(state.territories)) {
       if (!def(zone).water) continue;
-      const carriers = ts.units.filter(
+      const hasCarrier = ts.units.some(
         (c) => c.type === 'carrier' && !isEnemy(c.owner, u.owner),
       );
-      if (carriers.length === 0) continue;
-      const reach = 2; // carrier move
-      const d = dist.get(zone);
-      if (d !== undefined && d <= budget + reach) return true;
+      if (!hasCarrier) continue;
+      // water zones within 2 sailing moves of the carrier's zone
+      const meet = new Set<string>([zone]);
+      for (const n1 of def(zone).connections) {
+        if (!def(n1).water) continue;
+        meet.add(n1);
+        for (const n2 of def(n1).connections) {
+          if (def(n2).water) meet.add(n2);
+        }
+      }
+      for (const z of meet) {
+        const d = dist.get(z);
+        if (d !== undefined && d <= budget) return true;
+      }
     }
   }
   return false;
