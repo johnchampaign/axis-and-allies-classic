@@ -22,8 +22,11 @@ export function Lobby() {
       const data = (await r.json()) as { gameId: string; invites: Record<Power, string>; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
       setResult(data);
+      // hotseat wallet holds only HUMAN seats — AI seats play themselves
       const tokens: Record<string, string> = {};
-      for (const p of TURN_ORDER) tokens[p] = new URL(data.invites[p]).searchParams.get('t')!;
+      for (const p of TURN_ORDER) {
+        if (!aiPowers.includes(p)) tokens[p] = new URL(data.invites[p]).searchParams.get('t')!;
+      }
       saveTokens(data.gameId, tokens);
     } catch (e) {
       setError((e as Error).message);
@@ -61,25 +64,34 @@ export function Lobby() {
         </div>
       )}
       {error && <p style={{ color: '#f88' }}>⚠ {error}</p>}
-      {result && (
-        <div>
-          <h2>Game {result.gameId}</h2>
-          <ul>
-            {TURN_ORDER.map((p) => (
-              <li key={p} style={{ margin: 6 }}>
-                <b>{POWER_NAME[p]}</b>:{' '}
-                <input readOnly value={result.invites[p]} style={{ width: 320 }}
-                  onFocus={(e) => e.currentTarget.select()} />
-                <button onClick={() => navigator.clipboard.writeText(result.invites[p])}>copy</button>
-              </li>
-            ))}
-          </ul>
-          <a href={result.invites.russia.replace(/^https?:\/\/[^/]+/, '')}
-            style={{ fontSize: 18 }}>
-            Open the board (USSR moves first) ▸
-          </a>
-        </div>
-      )}
+      {result && (() => {
+        const humans = TURN_ORDER.filter((p) => !aiPowers.includes(p));
+        const first = humans[0] ?? TURN_ORDER[0];
+        return (
+          <div>
+            <h2>Game {result.gameId}</h2>
+            <ul>
+              {humans.map((p) => (
+                <li key={p} style={{ margin: 6 }}>
+                  <b>{POWER_NAME[p]}</b>:{' '}
+                  <input readOnly value={result.invites[p]} style={{ width: 320 }}
+                    onFocus={(e) => e.currentTarget.select()} />
+                  <button onClick={() => navigator.clipboard.writeText(result.invites[p])}>copy</button>
+                </li>
+              ))}
+            </ul>
+            {aiPowers.length > 0 && (
+              <p style={{ fontSize: 13, opacity: 0.8 }}>
+                {aiPowers.map((p) => POWER_NAME[p]).join(', ')} {aiPowers.length === 1 ? 'is' : 'are'} played by the AI — no invite needed.
+              </p>
+            )}
+            <a href={result.invites[first].replace(/^https?:\/\/[^/]+/, '')}
+              style={{ fontSize: 18 }}>
+              Open the board (play as {POWER_NAME[first]}) ▸
+            </a>
+          </div>
+        );
+      })()}
     </div>
   );
 }
