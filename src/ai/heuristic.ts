@@ -14,6 +14,7 @@ import {
   airRange, canalOpen, hasLandingSpot, isEnemy, isEnemyOccupied, isFriendlySpace, terr,
 } from '../engine/helpers';
 import { airPath, legalActions } from '../engine/legal';
+import { openingAction } from './openings';
 import { pendingBattleSpaces } from '../engine/turn';
 import { CAPITAL_OF, TURN_ORDER, type Action, type GameState, type Power, type Unit, type UnitType } from '../engine/types';
 
@@ -48,6 +49,10 @@ const PROFILES: Record<Power, Profile> = {
 export function chooseAction(state: GameState, power: Power): Action | null {
   if (state.battle) return battleDecision(state, power);
   if (state.current !== power) return null;
+  // fixed setup + fixed order: play the book in round 1 (engine-validated;
+  // a rejected or exhausted book falls through to normal doctrine)
+  const book = openingAction(state, power);
+  if (book) return book;
   switch (state.phase) {
     case 'tech': return { kind: 'endPhase' };
     case 'purchase': return purchase(state, power);
