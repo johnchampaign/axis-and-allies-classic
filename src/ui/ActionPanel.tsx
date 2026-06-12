@@ -1,7 +1,7 @@
 // Phase-aware action composer. Playbook "Option A": functional over pretty —
 // the engine (tryApplyAction server-side) is the legality authority; the UI
 // optimistically offers actions and surfaces the server's rejection reasons.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
 import type { Action, GameState, Power, Unit, UnitType } from '../engine/types';
@@ -489,10 +489,44 @@ function BattlePanel({
   error: string | null; busy: boolean;
 }) {
   const b = view.battle!;
-  const [picked, setPicked] = useState<number[]>([]);
   const ts = view.territories[b.territory];
   const ph = b.pendingHits[0];
   const myDecision = legal.length > 0;
+
+  // group eligible casualties by (owner, type) with count steppers, pre-filled
+  // cheapest-first — the common case becomes a single Confirm click
+  const groups = useMemo(() => {
+    if (!ph) return [];
+    const m = new Map<string, { owner: Power; type: UnitType; ids: number[] }>();
+    for (const id of ph.eligible) {
+      const u = ts.units.find((x) => x.id === id);
+      if (!u) continue;
+      const k = `${u.owner}:${u.type}`;
+      if (!m.has(k)) m.set(k, { owner: u.owner, type: u.type as UnitType, ids: [] });
+      m.get(k)!.ids.push(id);
+    }
+    return [...m.values()].sort((a, c) => UNITS[a.type].cost - UNITS[c.type].cost);
+  }, [ph?.eligible?.join(','), view.globalTurn]);
+
+  const cheapestFill = (): Record<string, number> => {
+    const fill: Record<string, number> = {};
+    let left = ph?.hits ?? 0;
+    for (const g of groups) {
+      const take = Math.min(left, g.ids.length);
+      fill[`${g.owner}:${g.type}`] = take;
+      left -= take;
+    }
+    return fill;
+  };
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const phKey = ph ? `${b.territory}:${b.round}:${ph.hits}:${ph.eligible.length}` : '';
+  const lastKey = useRef('');
+  if (ph && phKey !== lastKey.current) {
+    lastKey.current = phKey;
+    setCounts(cheapestFill());
+  }
+  const total = groups.reduce((s, g) => s + (counts[`${g.owner}:${g.type}`] ?? 0), 0);
+  const pickedIds = groups.flatMap((g) => g.ids.slice(0, counts[`${g.owner}:${g.type}`] ?? 0));
 
   return (
     <div style={{ ...box, border: '2px solid #c0392b' }}>
@@ -501,26 +535,30 @@ function BattlePanel({
       {!myDecision && <div>Waiting for the other side…</div>}
       {myDecision && ph && (
         <div>
-          <div>Choose {ph.hits} casualt{ph.hits === 1 ? 'y' : 'ies'} ({ph.side === 'defender' ? 'defending' : 'attacking'} units):</div>
-          {ph.eligible.map((id) => {
-            const u = ts.units.find((x) => x.id === id);
-            if (!u) return null;
+          <div>
+            Choose <b>{ph.hits}</b> casualt{ph.hits === 1 ? 'y' : 'ies'} ({ph.side === 'defender' ? 'defending' : 'attacking'} units)
+            — selected {total}:
+          </div>
+          {groups.map((g) => {
+            const k = `${g.owner}:${g.type}`;
+            const n = counts[k] ?? 0;
+            const set = (v: number) => setCounts({ ...counts, [k]: Math.max(0, Math.min(g.ids.length, v)) });
             return (
-              <label key={id} style={{ display: 'inline-block', margin: 4 }}>
-                <input
-                  type="checkbox"
-                  checked={picked.includes(id)}
-                  onChange={(e) =>
-                    setPicked(e.target.checked ? [...picked, id] : picked.filter((x) => x !== id))}
-                />
-                {UNIT_NAME[u.type]} ({POWER_NAME[u.owner]})
-              </label>
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0' }}>
+                <span style={{ minWidth: 170 }}>{UNIT_NAME[g.type]} ({POWER_NAME[g.owner]}) ×{g.ids.length}</span>
+                <button style={btn} onClick={() => set(0)}>none</button>
+                <button style={btn} onClick={() => set(n - 1)}>−</button>
+                <b style={{ minWidth: 22, textAlign: 'center' }}>{n}</b>
+                <button style={btn} onClick={() => set(n + 1)}>+</button>
+                <button style={btn} onClick={() => set(g.ids.length)}>all</button>
+              </div>
             );
           })}
           <div>
-            <button style={primary} disabled={picked.length !== ph.hits || busy}
-              onClick={() => { act({ kind: 'chooseCasualties', unitIds: picked }); setPicked([]); }}>
-              Confirm casualties
+            <button style={btn} onClick={() => setCounts(cheapestFill())}>cheapest first</button>
+            <button style={primary} disabled={total !== ph.hits || busy}
+              onClick={() => act({ kind: 'chooseCasualties', unitIds: pickedIds })}>
+              Confirm {total}/{ph.hits}
             </button>
           </div>
         </div>
