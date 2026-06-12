@@ -18,11 +18,14 @@ export function tname(tid: string): string { return TERR[tid]?.name ?? tid; }
 
 /** Shortest path over the board graph, restricted to the moving unit's domain
  * (land units never route through sea zones, ships never through land; air
- * flies over anything). Client-side mirror of the engine BFS — the server
- * re-validates, so an imperfect path just gets a clear rejection. */
+ * flies over anything) and avoiding blocked intermediates (e.g. enemy-occupied
+ * sea zones — ships cannot pass through them; the destination itself may be
+ * blocked, that's an attack). Client-side mirror of the engine BFS — the
+ * server re-validates, so an imperfect path just gets a clear rejection. */
 export function shortestPath(
   from: string, to: string, avoidNeutrals: string[],
   domain: 'land' | 'sea' | 'air' = 'air',
+  blocked: Set<string> = new Set(),
 ): string[] | null {
   if (from === to) return [from];
   const ok = (t: string) =>
@@ -32,8 +35,9 @@ export function shortestPath(
   while (queue.length) {
     const cur = queue.shift()!;
     for (const n of TERR[cur]?.connections ?? []) {
-      // neutrals may be entered (3-IPC violation) but never passed through
-      if (parent.has(n) || (avoidNeutrals.includes(n) && n !== to)) continue;
+      // neutrals may be entered (3-IPC violation) but never passed through;
+      // blocked spaces likewise are valid destinations but not waypoints
+      if (parent.has(n) || ((avoidNeutrals.includes(n) || blocked.has(n)) && n !== to)) continue;
       if (n !== to && !ok(n)) continue;
       if (n === to && !ok(n)) continue;
       parent.set(n, cur);
@@ -287,6 +291,17 @@ function MovePanel({
     return m;
   }, [selectedUnits, selected]);
 
+  // spaces holding enemy units: ships can't pass through them, and land/sea
+  // paths shouldn't accidentally route into a fight (still fine as the
+  // destination — that's an attack)
+  const hostileSpaces = useMemo(() => {
+    const out = new Set<string>();
+    for (const [t, ts] of Object.entries(view.territories)) {
+      if (ts.units.some((u) => POWER_SIDE[u.owner] !== POWER_SIDE[you])) out.add(t);
+    }
+    return out;
+  }, [view, you]);
+
   const budgetOf = (u: Unit): number => {
     let move = UNITS[u.type].move;
     if (view.techs[you].includes('longRangeAircraft')) {
@@ -313,8 +328,10 @@ function MovePanel({
           for (const n of TERR[cur].connections) {
             if (seen.has(n) || !passable(n)) continue;
             seen.set(n, dist);
-            // neutrals are reachable destinations but never expanded through
-            if (!view.neutrals.includes(n)) next.push(n);
+            // neutrals and hostile spaces are reachable destinations but never
+            // expanded through (ships can't pass enemy-occupied zones)
+            const blockedHere = d !== 'air' && hostileSpaces.has(n);
+            if (!view.neutrals.includes(n) && !blockedHere) next.push(n);
           }
         }
         frontier = next;
@@ -405,7 +422,10 @@ function MovePanel({
                   // air overflight triggers the 3-IPC violation (route manually if wanted).
                   const moves: Action[] = [];
                   for (const [d, units] of byDomain) {
-                    const path = shortestPath(selected, dest, view.neutrals, d);
+                    const path = shortestPath(
+                      selected, dest, view.neutrals, d,
+                      d === 'air' ? new Set<string>() : hostileSpaces,
+                    );
                     if (!path) { return; }
                     moves.push({
                       kind: 'move', unitIds: units.map((u) => u.id), path,
