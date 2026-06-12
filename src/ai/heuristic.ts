@@ -254,16 +254,23 @@ function purchase(state: GameState, p: Power): Action {
     buy('factory', 1);
   }
   if (homePile > 35) {
-    // the capital factory is clogged — but keep producing if another usable
-    // factory has room (e.g. Russia's Karelia complex while Moscow overflows)
-    const altFactory = state.turnStartFactories.some((t) =>
-      t !== CAPITAL_OF[p] &&
-      terr(state, t).units.filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length < 20);
-    if (!altFactory) {
-      // transports only, bank the rest
-      if (Object.keys(order).length === 0) return { kind: 'endPhase' };
-      return { kind: 'purchase', order };
+    // the capital is clogged: buy only what FORWARD factories can absorb this
+    // turn (game-log lesson: Russia ended a 36-round game with 161 units
+    // parked in Moscow — unlimited capital production buried its logistics)
+    let forwardCapacity = 0;
+    for (const t of state.turnStartFactories) {
+      if (t === CAPITAL_OF[p]) continue;
+      const pile = terr(state, t).units
+        .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
+      if (pile >= 20) continue;
+      const f = terr(state, t).units.find((u) => u.type === 'factory' && u.owner === p);
+      forwardCapacity += f?.factoryLimited ? Math.max(1, def(t).ipc) : 8;
     }
+    buy('armor', Math.min(Math.floor(forwardCapacity / 3), Math.floor((cash * prof.armorShare) / UNITS.armor.cost)));
+    const already = (order.armor ?? 0);
+    buy('infantry', Math.max(0, forwardCapacity - already));
+    if (Object.keys(order).length === 0) return { kind: 'endPhase' };
+    return { kind: 'purchase', order };
   }
   if (!prof.defendFirst && cash >= 27) buy('fighter', 1); // one quality piece when rich
   buy('armor', Math.floor((cash * prof.armorShare) / UNITS.armor.cost));
@@ -561,6 +568,8 @@ function mobilize(state: GameState, p: Power): Action {
   // score placements: units near the enemy; factories ALSO by income (a 1-IPC
   // complex builds 1 unit/turn — live probe put one in Evenki); ships never
   // into landlocked seas (live probe launched a transport onto the Caspian)
+  const capPile = terr(state, CAPITAL_OF[p]).units
+    .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
   let best: { a: Action; score: number } | null = null;
   for (const a of places) {
     let score = -distanceToEnemy(state, a.territory, p);
@@ -569,6 +578,8 @@ function mobilize(state: GameState, p: Power): Action {
       const openWater = def(a.seaZone).connections.some((n) => def(n).water);
       if (!openWater) score -= 100; // a lake: last resort only
     }
+    // don't keep stuffing an overflowing capital (log: 161 units in Moscow)
+    if (a.territory === CAPITAL_OF[p] && !a.seaZone && capPile > 35) score -= 50;
     if (!best || score > best.score) best = { a, score };
   }
   return best!.a;
