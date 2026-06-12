@@ -304,8 +304,16 @@ function combatMove(state: GameState, p: Power): Action | null {
       const enemyLand = nts.owner !== null && isEnemy(nts.owner, p);
       if (!enemyLand) continue;
       if (nts.units.some((u) => isEnemy(u.owner, p) && isCombat(u))) continue;
-      // keep at least one defender home if we own the territory and it borders enemies
-      const spare = movable.length > 1 || ts.owner !== p ? movable[0] : null;
+      // never strip the last defender from a frontier territory — pulling the
+      // lone garrison for the next grab is how West Europe changed hands 8
+      // times in one uploaded game (the revolving door)
+      const bordersEnemy = def(t).connections.some((m) => {
+        if (def(m).water) return false;
+        const mts = terr(state, m);
+        return (mts.owner !== null && isEnemy(mts.owner, p)) ||
+          mts.units.some((u) => isEnemy(u.owner, p) && isCombat(u));
+      });
+      const spare = movable.length > (bordersEnemy ? 1 : 0) ? movable[0] : null;
       if (!spare) continue;
       return { kind: 'move', unitIds: [spare.id], path: [t, n] };
     }
