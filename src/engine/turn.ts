@@ -35,9 +35,24 @@ export function captureTerritory(
     }
   }
 
-  // liberation: original owner is an ally whose capital is free → they resume ownership (spec §6.6)
-  if (original && original !== actor && !isEnemy(original, actor) && !capitalHeldByEnemy(state, original)) {
+  // liberation: original owner is an ally whose capital is free → they resume
+  // ownership (spec §6.6). When the captured territory IS the ally's capital,
+  // it always reverts — the capital is by definition enemy-held until this
+  // very capture (p. 20; live bug: the US kept a liberated London).
+  const isAllysCapital = original !== null && CAPITAL_OF[original] === t;
+  if (original && original !== actor && !isEnemy(original, actor) &&
+      (isAllysCapital || !capitalHeldByEnemy(state, original))) {
     ts.owner = original;
+    // their own original complexes/AA serve them again
+    for (const u of ts.units) {
+      if ((u.type === 'factory' || u.type === 'aaGun') && !isEnemy(u.owner, actor)) {
+        u.owner = original;
+        if (u.type === 'factory' && def(t).originalOwner === original) {
+          u.factoryLimited = false; // an original complex, back home (spec §9.3)
+          u.factoryReadyTurn = undefined;
+        }
+      }
+    }
     log(state, `${actor} liberates ${d.name} for ${original}.`);
   } else {
     ts.owner = actor;

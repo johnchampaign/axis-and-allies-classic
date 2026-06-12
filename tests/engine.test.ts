@@ -151,6 +151,25 @@ describe('combat', () => {
     expect(s.ipcs.russia).toBe(0);
   });
 
+  it('liberating an allied CAPITAL always returns it (with its complex) to the ally', () => {
+    // live bug: the liberator kept the capital because "ally's capital is
+    // enemy-held" was true — of the very capital being liberated
+    let s = at('combatMove', 'usa', 53);
+    clear(s, 'united-kingdom');
+    s.territories['united-kingdom'].owner = 'germany'; // London fell earlier
+    const f = addUnit(s, 'united-kingdom', 'factory', 'germany', { factoryLimited: true, factoryReadyTurn: 0 });
+    addUnit(s, 'united-kingdom', 'aaGun', 'germany');
+    // the UK is an island — liberate it the way the game does, amphibiously
+    const tr = addUnit(s, 'north-sea-zone', 'transport', 'usa');
+    const inf = addUnit(s, 'north-sea-zone', 'infantry', 'usa');
+    tr.cargo = [inf.id];
+    s = apply(s, { kind: 'offload', transportId: tr.id, to: 'united-kingdom' }, 'usa');
+    expect(s.territories['united-kingdom'].owner).toBe('uk'); // liberated, not kept
+    const fac = s.territories['united-kingdom'].units.find((u) => u.id === f.id)!;
+    expect(fac.owner).toBe('uk');
+    expect(fac.factoryLimited).toBe(false); // original UK complex, unlimited again
+  });
+
   it('liberating an allied territory returns it to the original owner', () => {
     let s = at('combatMove', 'uk', 17);
     clear(s, 'karelia-ssr');
