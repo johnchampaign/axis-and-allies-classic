@@ -376,23 +376,40 @@ function MobilizePanel({ view, act, selected }: { view: GameState; act: (a: Acti
   const pending = view.purchases;
   const counts = new Map<UnitType, number>();
   for (const p of pending) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
+  const selectedIsWater = !!selected && TERR[selected]?.water;
+  // ships placed into a selected SEA ZONE go through an adjacent usable factory (spec §9.2)
+  const factoriesForZone = selectedIsWater
+    ? (TERR[selected!]?.connections ?? []).filter((t) => view.turnStartFactories.includes(t))
+    : [];
   return (
     <div style={box}>
-      <b>Place new units</b> — {pending.length} to place. Click a territory with your factory, then place.
+      <b>Place new units</b> — {pending.length} to place. Click a territory with your factory
+      (or a sea zone next to one for ships), then place.
       {[...counts.entries()].map(([t, n]) => (
         <div key={t}>
           {n}× {UNIT_NAME[t]}
-          {selected && UNITS[t].domain !== 'sea' && (
+          {selected && !selectedIsWater && UNITS[t].domain !== 'sea' && (
             <button style={btn} onClick={() => act({ kind: 'place', type: t, territory: selected })}>
               place in {tname(selected)}
             </button>
           )}
-          {selected && UNITS[t].domain === 'sea' &&
+          {selected && !selectedIsWater && UNITS[t].domain === 'sea' &&
             (TERR[selected]?.connections ?? []).filter((z) => TERR[z].water).map((z) => (
               <button key={z} style={btn} onClick={() => act({ kind: 'place', type: t, territory: selected, seaZone: z })}>
                 place in {tname(z)}
               </button>
             ))}
+          {selectedIsWater && UNITS[t].domain === 'sea' && (
+            factoriesForZone.length > 0 ? factoriesForZone.map((f) => (
+              <button key={f} style={btn} onClick={() => act({ kind: 'place', type: t, territory: f, seaZone: selected! })}>
+                place in {tname(selected!)} (via {tname(f)} complex)
+              </button>
+            )) : (
+              <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 6 }}>
+                — no usable complex adjacent to {tname(selected!)} (owned since turn start required)
+              </span>
+            )
+          )}
         </div>
       ))}
       <div style={{ fontSize: 12, opacity: 0.7 }}>Ending the phase forfeits unplaced units (and collects income).</div>
