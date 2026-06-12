@@ -221,6 +221,11 @@ function purchase(state: GameState, p: Power): Action {
   let cash = state.ipcs[p];
   if (cash < 3) return { kind: 'endPhase' };
   const prof = PROFILES[p];
+  // never buy what can't be placed (live report: blockaded Japan bought
+  // transports every turn and forfeited them — its only port was enemy-held)
+  if (state.turnStartFactories.length === 0) return { kind: 'endPhase' };
+  const seaPlaceable = state.turnStartFactories.some((t) =>
+    def(t).connections.some((z) => def(z).water && !isEnemyOccupied(state, z, p)));
   // don't buy what can't deploy: a huge home stockpile means production is
   // outpacing sealift/fronts — bank the cash for land units, but KEEP buying
   // transports, which are the only thing that drains the pile (live report:
@@ -238,7 +243,7 @@ function purchase(state: GameState, p: Power): Action {
   // ANY power builds boats when an enemy-held capital is sea-only reachable —
   // live report: Russia banked 155 IPCs while Japan held London with 2 units.
   const seaOnlyCapital = sealiftCapital(state, p);
-  if ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital) {
+  if (seaPlaceable && ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital)) {
     const target = Math.min(9, Math.max(prof.transports, seaOnlyCapital ? 3 : 0, Math.ceil(homePile / 5)));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
   }

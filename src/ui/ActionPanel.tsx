@@ -429,7 +429,18 @@ function MovePanel({
               )}
             </div>
           ))}
-          {transports.map((tr) => (
+          {transports.length > 1 && (
+            <div style={{ borderBottom: '1px solid #456', paddingBottom: 6, marginBottom: 6 }}>
+              <b>Unload ALL {transports.length} transports</b> ({transports.reduce((s, t) => s + t.cargo.length, 0)} units) to:
+              {TERR[selected].connections.filter((n) => !TERR[n].water).map((n) => (
+                <button key={n} style={primary}
+                  onClick={() => act(transports.map((tr) => ({ kind: 'offload' as const, transportId: tr.id, to: n })))}>
+                  {tname(n)}
+                </button>
+              ))}
+            </div>
+          )}
+          {transports.slice(0, 6).map((tr) => (
             <div key={tr.id}>
               Transport #{tr.id} ({tr.cargo.length} aboard) unload to:
               {TERR[selected].connections.filter((n) => !TERR[n].water).map((n) => (
@@ -439,6 +450,11 @@ function MovePanel({
               ))}
             </div>
           ))}
+          {transports.length > 6 && (
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              …and {transports.length - 6} more — use “Unload ALL” above.
+            </div>
+          )}
         </div>
       )}
     </div>
