@@ -168,7 +168,15 @@ function moveSea(
 
   const fromTs = terr(state, a.path[0]);
   const destTs = terr(state, dest);
-  for (const u of [...units, ...fighters]) {
+  // cargo travels with its transport (spec §5.2)
+  const cargo: Unit[] = [];
+  for (const u of units) {
+    for (const cid of u.cargo) {
+      const c = fromTs.units.find((x) => x.id === cid);
+      if (c) cargo.push(c);
+    }
+  }
+  for (const u of [...units, ...fighters, ...cargo]) {
     fromTs.units.splice(fromTs.units.indexOf(u), 1);
     destTs.units.push(u);
   }

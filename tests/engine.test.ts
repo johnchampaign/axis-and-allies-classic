@@ -165,6 +165,34 @@ describe('combat', () => {
   });
 });
 
+describe('transports', () => {
+  it('cargo travels with the transport and unloads at the destination', () => {
+    // UK: load 2 infantry in the UK, sail the North Sea -> Baltic, unload into
+    // friendly Finland-Norway (made UK-held for the test) in noncombat.
+    let s = at('noncombat', 'uk', 37);
+    clear(s, 'north-sea-zone');
+    clear(s, 'baltic-sea-zone');
+    s.territories['finland-norway'].owner = 'uk';
+    clear(s, 'finland-norway');
+    const tr = addUnit(s, 'north-sea-zone', 'transport', 'uk');
+    const i1 = addUnit(s, 'united-kingdom', 'infantry', 'uk');
+    const i2 = addUnit(s, 'united-kingdom', 'infantry', 'uk');
+    s = apply(s, { kind: 'load', unitIds: [i1.id, i2.id], transportId: tr.id }, 'uk');
+    expect(s.territories['north-sea-zone'].units.map((u) => u.id)).toContain(i1.id);
+    s = apply(s, { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'baltic-sea-zone'] }, 'uk');
+    // the regression: cargo must arrive with the ship, not stay behind
+    const baltic = s.territories['baltic-sea-zone'].units.map((u) => u.id);
+    expect(baltic).toContain(tr.id);
+    expect(baltic).toContain(i1.id);
+    expect(baltic).toContain(i2.id);
+    expect(s.territories['north-sea-zone'].units.length).toBe(0);
+    s = apply(s, { kind: 'offload', transportId: tr.id, to: 'finland-norway' }, 'uk');
+    const ashore = s.territories['finland-norway'].units.map((u) => u.id);
+    expect(ashore).toContain(i1.id);
+    expect(ashore).toContain(i2.id);
+  });
+});
+
 describe('economy', () => {
   it('income equals production level; none when capital enemy-held', () => {
     let s = at('mobilize', 'russia', 19);
