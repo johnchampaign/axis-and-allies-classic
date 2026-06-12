@@ -9,15 +9,21 @@ export function Lobby() {
   const [result, setResult] = useState<{ gameId: string; invites: Record<Power, string> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [aiPowers, setAiPowers] = useState<Power[]>([]);
+  const [emails, setEmails] = useState<Partial<Record<Power, string>>>({});
 
   const create = async () => {
     setCreating(true);
     setError(null);
     try {
+      const cleaned: Partial<Record<Power, string>> = {};
+      for (const p of TURN_ORDER) {
+        const e = emails[p]?.trim();
+        if (e && !aiPowers.includes(p)) cleaned[p] = e;
+      }
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aiPowers }),
+        body: JSON.stringify({ aiPowers, emails: cleaned }),
       });
       const data = (await r.json()) as { gameId: string; invites: Record<Power, string>; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
@@ -54,6 +60,25 @@ export function Lobby() {
                       : aiPowers.filter((x) => x !== p))}
                 />{' '}
                 {POWER_NAME[p]}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
+            <legend>Email reminders (optional)</legend>
+            <p style={{ fontSize: 13, opacity: 0.8, margin: '4px 8px' }}>
+              Get a nudge when it's your turn and the game has been waiting a while.
+              One address per human player — leave blank to skip.
+            </p>
+            {TURN_ORDER.filter((p) => !aiPowers.includes(p)).map((p) => (
+              <label key={p} style={{ display: 'block', margin: '4px 10px' }}>
+                <span style={{ display: 'inline-block', minWidth: 130 }}>{POWER_NAME[p]}</span>
+                <input
+                  type="email"
+                  placeholder="player@example.com"
+                  value={emails[p] ?? ''}
+                  onChange={(e) => setEmails({ ...emails, [p]: e.target.value })}
+                  style={{ width: 240 }}
+                />
               </label>
             ))}
           </fieldset>
