@@ -3,6 +3,7 @@ import { useGame, ChatPanel, UpdateBanner } from 'digital-boardgame-framework/cl
 import type { Action, GameState, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { ActionPanel, tname } from './ActionPanel';
+import { AiTurnSummary } from './AiTurnSummary';
 import { ArtBoard } from './ArtBoard';
 import { useArtLoaded } from './artCache';
 import { Board } from './Board';
@@ -100,6 +101,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           )}
         </div>
         {artModal && <LoadArtModal onClose={() => setArtModal(false)} />}
+        <AiTurnSummary gameId={gameId} view={view} />
         {selected && (
           <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
             <b>{tname(selected)}</b>
