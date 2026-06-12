@@ -160,6 +160,33 @@ function isSeaPower(state: GameState, p: Power): boolean {
   return distanceToEnemyByLand(state, CAPITAL_OF[p], p) >= 99;
 }
 
+/** A capital we need but cannot march to (enemy-held, island or sea-locked):
+ * the reason ANY power — not just island powers — may need transports.
+ * Covers liberating London for the Allies and invading Tokyo alike. */
+function sealiftCapital(state: GameState, p: Power): string | null {
+  for (const q of TURN_ORDER) {
+    const cap = CAPITAL_OF[q];
+    const owner = terr(state, cap).owner;
+    if (!owner || !isEnemy(owner, p)) continue; // we only storm enemy-held capitals
+    if (landDistance(CAPITAL_OF[p], cap) >= 99) return cap;
+  }
+  return null;
+}
+
+/** Best owned coastal territory to stage an embarkation from (nearest to `from`). */
+function embarkCoast(state: GameState, p: Power, from: string): string | null {
+  let best: { t: string; d: number } | null = null;
+  for (const [t, ts] of Object.entries(state.territories)) {
+    if (def(t).water || ts.owner !== p) continue;
+    const coastal = def(t).connections.some((z) => def(z).water && !isEnemyOccupied(state, z, p));
+    if (!coastal) continue;
+    const d = landDistance(from, t);
+    if (d >= 99) continue;
+    if (!best || d < best.d) best = { t, d };
+  }
+  return best?.t ?? null;
+}
+
 function myTransportCount(state: GameState, p: Power): number {
   let n = 0;
   for (const ts of Object.values(state.territories)) {
@@ -186,15 +213,25 @@ function purchase(state: GameState, p: Power): Action {
     if (k > 0) { order[t] = (order[t] ?? 0) + k; cash -= k * cost; }
   };
   // sealift: keep the profile's fleet, and GROW it while troops pile up at home
-  // (log lesson: a fixed 2-boat shuttle left 40-70 units stranded in capitals)
-  if (prof.transports > 0 && isSeaPower(state, p)) {
-    const target = Math.min(7, Math.max(prof.transports, Math.ceil(homePile / 6)));
+  // (log lesson: a fixed 2-boat shuttle left 40-70 units stranded in capitals).
+  // ANY power builds boats when an enemy-held capital is sea-only reachable —
+  // live report: Russia banked 155 IPCs while Japan held London with 2 units.
+  const seaOnlyCapital = sealiftCapital(state, p);
+  if ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital) {
+    const target = Math.min(7, Math.max(prof.transports, seaOnlyCapital ? 3 : 0, Math.ceil(homePile / 6)));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
   }
   if (homePile > 35) {
-    // production already outpaces deployment — transports only, bank the rest
-    if (Object.keys(order).length === 0) return { kind: 'endPhase' };
-    return { kind: 'purchase', order };
+    // the capital factory is clogged — but keep producing if another usable
+    // factory has room (e.g. Russia's Karelia complex while Moscow overflows)
+    const altFactory = state.turnStartFactories.some((t) =>
+      t !== CAPITAL_OF[p] &&
+      terr(state, t).units.filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length < 20);
+    if (!altFactory) {
+      // transports only, bank the rest
+      if (Object.keys(order).length === 0) return { kind: 'endPhase' };
+      return { kind: 'purchase', order };
+    }
   }
   if (!prof.defendFirst && cash >= 27) buy('fighter', 1); // one quality piece when rich
   buy('armor', Math.floor((cash * prof.armorShare) / UNITS.armor.cost));
@@ -406,7 +443,10 @@ function noncombat(state: GameState, p: Power): Action | null {
     }
     return null; // hold everything else
   }
-  // 3) march one idle, safe-area ground unit toward the nearest enemy frontier
+  // 3) march one idle, safe-area ground unit toward the nearest enemy frontier —
+  // or toward the embarkation coast when the war effort needs sealift (live
+  // report: Russia's army has to walk to Karelia to board for London)
+  const seaOnlyCapital = sealiftCapital(state, p);
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water) continue;
     const hasAdjacentEnemy = def(t).connections.some((n) =>
@@ -418,7 +458,12 @@ function noncombat(state: GameState, p: Power): Action | null {
           u.owner === p && !u.movedPhase && !u.fought &&
           (u.type === 'infantry' || u.type === 'armor'));
     if (movers.length === 0) continue;
-    const step = stepTowardEnemy(state, t, p);
+    let step: string | null = null;
+    if (seaOnlyCapital && myTransportCount(state, p) > 0) {
+      const embark = embarkCoast(state, p, t);
+      if (embark && embark !== t) step = stepToward(state, t, embark, p);
+    }
+    step = step ?? stepTowardEnemy(state, t, p);
     if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
   }
   return null;
