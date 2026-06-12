@@ -125,6 +125,14 @@ export function ActionPanel({
 function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: Action | Action[]) => void }) {
   const [dice, setDice] = useState(1);
   const cash = view.ipcs[you];
+  const n = Number.isInteger(dice) && dice > 0 ? dice : 1;
+  // explain WHY the roll is unavailable — a silently disabled button reads as
+  // "nothing happens" (live playtest report)
+  const blocked = view.techRolledThisTurn
+    ? 'You already made your development attempt this turn — all research dice are bought in one roll (each 6 is a breakthrough).'
+    : cash < n * 5
+      ? `Not enough IPCs: ${n} ${n === 1 ? 'die costs' : 'dice cost'} ${n * 5}, you have ${cash}.`
+      : null;
   return (
     <div style={box}>
       <b>Weapons development</b> — {cash} IPCs.
@@ -132,11 +140,13 @@ function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: A
       <div>
         <input type="number" min={1} max={Math.floor(cash / 5) || 1} value={dice}
           onChange={(e) => setDice(Number(e.target.value))} style={{ width: 50 }} />
-        <button style={btn} disabled={cash < dice * 5 || view.techRolledThisTurn}
-          onClick={() => act({ kind: 'rollTech', dice })}>
-          Roll {dice} die/dice ({dice * 5} IPCs)
+        <button style={btn} disabled={!!blocked}
+          onClick={() => act({ kind: 'rollTech', dice: n })}>
+          Roll {n} {n === 1 ? 'die' : 'dice'} ({n * 5} IPCs)
         </button>
       </div>
+      {blocked && <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>{blocked}</div>}
+      <div style={{ fontSize: 12, opacity: 0.7 }}>Results appear in the game log below the board.</div>
     </div>
   );
 }
