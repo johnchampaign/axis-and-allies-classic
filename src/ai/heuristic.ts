@@ -70,6 +70,31 @@ function defenseOf(state: GameState, t: string, vs: Power): number {
     .reduce((s, u) => s + Math.max(defVal(u), 0.5), 0); // count fodder slightly
 }
 
+/** The defensive leash only binds while enemy ground is anywhere near home —
+ * once the neighborhood is clear (e.g. Germany is dead), Russia may roam. */
+function radiusActive(state: GameState, p: Power): boolean {
+  const cap = CAPITAL_OF[p];
+  const seen = new Set([cap]);
+  let frontier = [cap];
+  for (let d = 1; d <= 4; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (def(n).water || seen.has(n)) continue;
+        seen.add(n);
+        const nts = terr(state, n);
+        if ((nts.owner !== null && isEnemy(nts.owner, p)) ||
+            nts.units.some((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain === 'land')) {
+          return true;
+        }
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  return false;
+}
+
 /** Enemy ground within 2 land steps of the capital (or in it). */
 function capitalThreatened(state: GameState, p: Power): boolean {
   const cap = CAPITAL_OF[p];
@@ -149,11 +174,11 @@ function purchase(state: GameState, p: Power): Action {
   if (cash < 3) return { kind: 'endPhase' };
   const prof = PROFILES[p];
   // don't buy what can't deploy: a huge home stockpile means production is
-  // outpacing sealift/fronts — bank the cash (also keeps long stalemates from
-  // ballooning into 1000-unit states that strain the live server)
+  // outpacing sealift/fronts — bank the cash for land units, but KEEP buying
+  // transports, which are the only thing that drains the pile (live report:
+  // the USA banked 411 IPCs while London sat enemy-held with 2 defenders)
   const homePile = terr(state, CAPITAL_OF[p]).units
     .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
-  if (homePile > 35) return { kind: 'endPhase' };
   const order: Partial<Record<UnitType, number>> = {};
   const buy = (t: UnitType, n: number) => {
     const cost = UNITS[t].cost - (state.techs[p].includes('industrialTechnology') ? 1 : 0);
@@ -163,10 +188,13 @@ function purchase(state: GameState, p: Power): Action {
   // sealift: keep the profile's fleet, and GROW it while troops pile up at home
   // (log lesson: a fixed 2-boat shuttle left 40-70 units stranded in capitals)
   if (prof.transports > 0 && isSeaPower(state, p)) {
-    const stockpile = terr(state, CAPITAL_OF[p]).units
-      .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
-    const target = Math.min(7, Math.max(prof.transports, Math.ceil(stockpile / 6)));
+    const target = Math.min(7, Math.max(prof.transports, Math.ceil(homePile / 6)));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
+  }
+  if (homePile > 35) {
+    // production already outpaces deployment — transports only, bank the rest
+    if (Object.keys(order).length === 0) return { kind: 'endPhase' };
+    return { kind: 'purchase', order };
   }
   if (!prof.defendFirst && cash >= 27) buy('fighter', 1); // one quality piece when rich
   buy('armor', Math.floor((cash * prof.armorShare) / UNITS.armor.cost));
@@ -181,6 +209,12 @@ function combatMove(state: GameState, p: Power): Action | null {
   const tp = transportPlay(state, p, 'combatMove');
   if (tp) return tp;
   const prof = PROFILES[p];
+  const leashed = prof.attackRadius > 0 && radiusActive(state, p);
+  // 0.5) navy: clear adjacent enemy fleets when favorable — without this,
+  // blockades are never broken and sealift dies on the vine (live report:
+  // a 2-defender enemy-held London that no ally could reach)
+  const naval = navalAttack(state, p);
+  if (naval) return naval;
   // 1) walkover: grab an adjacent unowned-by-us, undefended enemy territory with one spare unit
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water) continue;
@@ -189,7 +223,7 @@ function combatMove(state: GameState, p: Power): Action | null {
     if (movable.length === 0) continue;
     for (const n of def(t).connections) {
       if (def(n).water || state.neutrals.includes(n)) continue;
-      if (prof.attackRadius > 0 && landDistance(CAPITAL_OF[p], n) > prof.attackRadius) continue;
+      if (leashed && landDistance(CAPITAL_OF[p], n) > prof.attackRadius) continue;
       const nts = terr(state, n);
       const enemyLand = nts.owner !== null && isEnemy(nts.owner, p);
       if (!enemyLand) continue;
@@ -211,7 +245,7 @@ function combatMove(state: GameState, p: Power): Action | null {
   } | null = null;
   for (const [target, ts] of Object.entries(state.territories)) {
     if (def(target).water || state.neutrals.includes(target)) continue;
-    if (prof.attackRadius > 0 && landDistance(CAPITAL_OF[p], target) > prof.attackRadius) continue;
+    if (leashed && landDistance(CAPITAL_OF[p], target) > prof.attackRadius) continue;
     const enemyHeld = (ts.owner !== null && isEnemy(ts.owner, p)) ||
       ts.units.some((u) => isEnemy(u.owner, p) && isCombat(u));
     if (!enemyHeld) continue;
@@ -269,6 +303,39 @@ function airSupport(state: GameState, p: Power, target: string): { unit: Unit; a
     }
   }
   return out;
+}
+
+/** One favorable fleet engagement per call: adjacent warships gang up on an
+ * enemy-held sea zone when the strength ratio clears the profile margin. */
+function navalAttack(state: GameState, p: Power): Action | null {
+  const prof = PROFILES[p];
+  for (const [zone, ts] of Object.entries(state.territories)) {
+    if (!def(zone).water) continue;
+    const enemies = ts.units.filter((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain !== 'land');
+    if (enemies.length === 0) continue;
+    const defense = enemies.reduce((s, u) => s + Math.max(defVal(u), 0.5), 0);
+    const committed = ts.units
+      .filter((u) => u.owner === p && isCombat(u) && UNITS[u.type].domain === 'sea')
+      .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+    const from = new Map<string, Unit[]>();
+    let reinforcements = 0;
+    for (const n of def(zone).connections) {
+      if (!def(n).water) continue;
+      const ships = terr(state, n).units.filter((u) =>
+        u.owner === p && !u.movedPhase && !u.fought && u.cargo.length === 0 &&
+        (u.type === 'battleship' || u.type === 'submarine' || u.type === 'carrier'));
+      if (ships.length > 0) {
+        from.set(n, ships);
+        reinforcements += ships.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+      }
+    }
+    if (from.size === 0) continue;
+    if ((committed + reinforcements) / defense >= prof.margin) {
+      const [fromZ, ships] = [...from.entries()][0];
+      return { kind: 'move', unitIds: ships.map((u) => u.id), path: [fromZ, zone] };
+    }
+  }
+  return null;
 }
 
 // --- combat phase ---
