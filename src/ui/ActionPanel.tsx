@@ -57,6 +57,44 @@ const btn: React.CSSProperties = {
 };
 const primary: React.CSSProperties = { ...btn, background: '#5f7e4d', borderColor: '#7a9' };
 
+/** Client-side mirror of the engine's end-of-noncombat crash rules (spec §4.3):
+ * planes that would be lost if the phase ended right now. */
+function doomedAircraft(view: GameState, you: Power): { tid: string; type: string; count: number }[] {
+  const out: { tid: string; type: string; count: number }[] = [];
+  const enemySide = (o: Power) => POWER_SIDE[o] !== POWER_SIDE[you];
+  for (const [tid, ts] of Object.entries(view.territories)) {
+    const water = TERR[tid].water;
+    const mine = ts.units.filter((u) => u.owner === you && (u.type === 'fighter' || u.type === 'bomber'));
+    if (mine.length === 0) continue;
+    if (!water) {
+      const friendly = ts.owner !== null && !enemySide(ts.owner) &&
+        ts.units.every((u) => !enemySide(u.owner));
+      for (const u of mine) {
+        const safe = friendly && (!u.fought || view.turnStartFriendly.includes(tid));
+        if (!safe) push(tid, u.type);
+      }
+    } else {
+      // own-side carrier capacity vs own-side fighters; bombers never stay at sea
+      const sideFighters = ts.units.filter((u) => u.type === 'fighter' && !enemySide(u.owner)).length;
+      const capacity = ts.units.filter((u) => u.type === 'carrier' && !enemySide(u.owner)).length * 2;
+      let overflow = Math.max(0, sideFighters - capacity);
+      for (const u of mine) {
+        if (u.type === 'bomber') push(tid, 'bomber');
+        else if (overflow > 0) { push(tid, 'fighter'); overflow--; }
+      }
+    }
+  }
+  function push(tid: string, type: string) {
+    const e = out.find((x) => x.tid === tid && x.type === type);
+    if (e) e.count++;
+    else out.push({ tid, type, count: 1 });
+  }
+  return out;
+}
+const POWER_SIDE: Record<Power, 'axis' | 'allies'> = {
+  russia: 'allies', germany: 'axis', uk: 'allies', japan: 'axis', usa: 'allies',
+};
+
 export function ActionPanel({
   view, you, yourTurn, legal, submit, selected, selectedUnits, clearSelection,
 }: {
@@ -71,6 +109,7 @@ export function ActionPanel({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
 
   const act = async (a: Action | Action[]) => {
     setError(null);
@@ -115,9 +154,38 @@ export function ActionPanel({
       )}
       {view.phase === 'combat' && <CombatPanel view={view} legal={legal} act={act} />}
       {view.phase === 'mobilize' && <MobilizePanel view={view} act={act} selected={selected} />}
-      <button style={btn} disabled={busy} onClick={() => act({ kind: 'endPhase' })}>
-        End {view.phase} phase ▸
-      </button>
+      {confirmCrash ? (
+        <div style={{ ...box, border: '2px solid #c0392b' }}>
+          <b>⚠ Aircraft will be lost!</b>
+          <div style={{ fontSize: 13, margin: '6px 0' }}>
+            Ending the phase now destroys these planes (no legal landing):
+            <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+              {confirmCrash.map((d, i) => (
+                <li key={i}>{d.count}× {UNIT_NAME[d.type]} in {tname(d.tid)}</li>
+              ))}
+            </ul>
+            Planes must end the turn in a territory that was friendly at the start of
+            your turn (fighters may also land on a carrier with room).
+          </div>
+          <button style={primary} disabled={busy} onClick={() => setConfirmCrash(null)}>
+            Go back and move them
+          </button>
+          <button style={btn} disabled={busy}
+            onClick={() => { setConfirmCrash(null); act({ kind: 'endPhase' }); }}>
+            End phase anyway (lose {confirmCrash.reduce((s, d) => s + d.count, 0)})
+          </button>
+        </div>
+      ) : (
+        <button style={btn} disabled={busy} onClick={() => {
+          if (view.phase === 'noncombat') {
+            const doomed = doomedAircraft(view, you);
+            if (doomed.length > 0) { setConfirmCrash(doomed); return; }
+          }
+          act({ kind: 'endPhase' });
+        }}>
+          End {view.phase} phase ▸
+        </button>
+      )}
     </div>
   );
 }
