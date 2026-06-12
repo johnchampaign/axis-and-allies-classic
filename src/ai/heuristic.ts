@@ -15,9 +15,35 @@ import {
 } from '../engine/helpers';
 import { airPath, legalActions } from '../engine/legal';
 import { pendingBattleSpaces } from '../engine/turn';
-import type { Action, GameState, Power, Unit, UnitType } from '../engine/types';
+import { CAPITAL_OF, TURN_ORDER, type Action, type GameState, type Power, type Unit, type UnitType } from '../engine/types';
 
-const ATTACK_MARGIN = 1.25; // attack-power : defense-power ratio required to attack
+// Per-power strategy profiles (Classic is highly asymmetric — tuned from
+// uploaded human-vs-AI game logs; first lesson: AI Russia attacked outward and
+// lost Moscow on round 2 while UK/USA/Japan hoarded 40-70 units at home).
+interface Profile {
+  /** attack-power : defense-power ratio required to attack */
+  margin: number;
+  /** minimum land units kept in the capital at all times */
+  capitalGarrison: number;
+  /** defensive power: rally to the capital when threatened; attack only near home */
+  defendFirst: boolean;
+  /** only attack land targets within this many land steps of the capital (0 = no limit) */
+  attackRadius: number;
+  /** target transport fleet (sea powers grow it further when troops pile up) */
+  transports: number;
+  /** fraction of leftover cash spent on armor (rest on infantry) */
+  armorShare: number;
+}
+const PROFILES: Record<Power, Profile> = {
+  // Moscow must not fall: turtle, big garrison, counterattack only around the core
+  russia: { margin: 1.6, capitalGarrison: 8, defendFirst: true, attackRadius: 3, transports: 0, armorShare: 0.15 },
+  // the aggressor that already wins benchmarks
+  germany: { margin: 1.25, capitalGarrison: 4, defendFirst: false, attackRadius: 0, transports: 1, armorShare: 0.33 },
+  // island powers: real sealift, decent caution, keep the capital safe
+  uk: { margin: 1.4, capitalGarrison: 5, defendFirst: false, attackRadius: 0, transports: 4, armorShare: 0.25 },
+  japan: { margin: 1.25, capitalGarrison: 4, defendFirst: false, attackRadius: 0, transports: 4, armorShare: 0.33 },
+  usa: { margin: 1.4, capitalGarrison: 4, defendFirst: false, attackRadius: 0, transports: 5, armorShare: 0.25 },
+};
 
 export function chooseAction(state: GameState, power: Power): Action | null {
   if (state.battle) return battleDecision(state, power);
@@ -44,13 +70,69 @@ function defenseOf(state: GameState, t: string, vs: Power): number {
     .reduce((s, u) => s + Math.max(defVal(u), 0.5), 0); // count fodder slightly
 }
 
-/** No land route from any of my territories to any enemy → power needs a navy. */
-function isSeaPower(state: GameState, p: Power): boolean {
-  for (const [t, ts] of Object.entries(state.territories)) {
-    if (def(t).water || ts.owner !== p) continue;
-    if (distanceToEnemyByLand(state, t, p) < 99) return false;
+/** Enemy ground within 2 land steps of the capital (or in it). */
+function capitalThreatened(state: GameState, p: Power): boolean {
+  const cap = CAPITAL_OF[p];
+  if (terr(state, cap).owner !== p) return true;
+  const seen = new Set([cap]);
+  let frontier = [cap];
+  for (let d = 1; d <= 2; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (def(n).water || seen.has(n)) continue;
+        seen.add(n);
+        if (terr(state, n).units.some((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain === 'land')) {
+          return true;
+        }
+        next.push(n);
+      }
+    }
+    frontier = next;
   }
-  return true;
+  return false;
+}
+
+function landDistance(from: string, to: string): number {
+  if (from === to) return 0;
+  const seen = new Set([from]);
+  let frontier = [from];
+  for (let d = 1; d <= 10; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (def(n).water || seen.has(n)) continue;
+        if (n === to) return d;
+        seen.add(n);
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  return 99;
+}
+
+/** Movable ground units in `t`, respecting the capital garrison floor. */
+function sparesIn(state: GameState, p: Power, t: string): Unit[] {
+  const ts = terr(state, t);
+  const movable = ts.units.filter((u) =>
+    u.owner === p && !u.movedPhase && !u.fought &&
+    (u.type === 'infantry' || u.type === 'armor'));
+  if (t !== CAPITAL_OF[p]) return movable;
+  const all = ts.units.filter((u) =>
+    u.owner === p && (u.type === 'infantry' || u.type === 'armor'));
+  const keep = PROFILES[p].capitalGarrison;
+  const spareCount = Math.max(0, all.length - keep);
+  // keep infantry home for defense; armor leaves first
+  return [...movable].sort((a, b) =>
+    (a.type === 'armor' ? 0 : 1) - (b.type === 'armor' ? 0 : 1)).slice(0, spareCount);
+}
+
+/** The capital (where production concentrates) has no land route to any enemy
+ * → the home army needs sealift. Colonies touching the enemy don't change
+ * that: the UK's India border doesn't get troops out of London. */
+function isSeaPower(state: GameState, p: Power): boolean {
+  return distanceToEnemyByLand(state, CAPITAL_OF[p], p) >= 99;
 }
 
 function myTransportCount(state: GameState, p: Power): number {
@@ -65,16 +147,23 @@ function myTransportCount(state: GameState, p: Power): number {
 function purchase(state: GameState, p: Power): Action {
   let cash = state.ipcs[p];
   if (cash < 3) return { kind: 'endPhase' };
+  const prof = PROFILES[p];
   const order: Partial<Record<UnitType, number>> = {};
   const buy = (t: UnitType, n: number) => {
     const cost = UNITS[t].cost - (state.techs[p].includes('industrialTechnology') ? 1 : 0);
     const k = Math.min(n, Math.floor(cash / cost));
     if (k > 0) { order[t] = (order[t] ?? 0) + k; cash -= k * cost; }
   };
-  // sea powers keep a small transport fleet so the army can actually go somewhere
-  if (isSeaPower(state, p)) buy('transport', Math.max(0, 2 - myTransportCount(state, p)));
-  if (cash >= 27) buy('fighter', 1); // one quality piece when rich
-  buy('armor', Math.floor(cash / 3 / UNITS.armor.cost)); // ~1/3 of remainder on armor
+  // sealift: keep the profile's fleet, and GROW it while troops pile up at home
+  // (log lesson: a fixed 2-boat shuttle left 40-70 units stranded in capitals)
+  if (prof.transports > 0 && isSeaPower(state, p)) {
+    const stockpile = terr(state, CAPITAL_OF[p]).units
+      .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
+    const target = Math.min(7, Math.max(prof.transports, Math.ceil(stockpile / 6)));
+    buy('transport', Math.max(0, target - myTransportCount(state, p)));
+  }
+  if (!prof.defendFirst && cash >= 27) buy('fighter', 1); // one quality piece when rich
+  buy('armor', Math.floor((cash * prof.armorShare) / UNITS.armor.cost));
   buy('infantry', 99); // the rest on infantry
   if (Object.keys(order).length === 0) return { kind: 'endPhase' };
   return { kind: 'purchase', order };
@@ -85,15 +174,16 @@ function combatMove(state: GameState, p: Power): Action | null {
   // 0) transports: assault, sail toward a beach, or pick up troops
   const tp = transportPlay(state, p, 'combatMove');
   if (tp) return tp;
+  const prof = PROFILES[p];
   // 1) walkover: grab an adjacent unowned-by-us, undefended enemy territory with one spare unit
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water) continue;
-    const movable = ts.units.filter((u) =>
-      u.owner === p && !u.movedPhase && !u.fought &&
-      (u.type === 'infantry' || u.type === 'armor'));
+    if (!ts.units.some((u) => u.owner === p)) continue;
+    const movable = sparesIn(state, p, t);
     if (movable.length === 0) continue;
     for (const n of def(t).connections) {
       if (def(n).water || state.neutrals.includes(n)) continue;
+      if (prof.attackRadius > 0 && landDistance(CAPITAL_OF[p], n) > prof.attackRadius) continue;
       const nts = terr(state, n);
       const enemyLand = nts.owner !== null && isEnemy(nts.owner, p);
       if (!enemyLand) continue;
@@ -115,6 +205,7 @@ function combatMove(state: GameState, p: Power): Action | null {
   } | null = null;
   for (const [target, ts] of Object.entries(state.territories)) {
     if (def(target).water || state.neutrals.includes(target)) continue;
+    if (prof.attackRadius > 0 && landDistance(CAPITAL_OF[p], target) > prof.attackRadius) continue;
     const enemyHeld = (ts.owner !== null && isEnemy(ts.owner, p)) ||
       ts.units.some((u) => isEnemy(u.owner, p) && isCombat(u));
     if (!enemyHeld) continue;
@@ -127,9 +218,7 @@ function combatMove(state: GameState, p: Power): Action | null {
     let reinforcements = 0;
     for (const n of def(target).connections) {
       if (def(n).water) continue;
-      const units = terr(state, n).units.filter((u) =>
-        u.owner === p && !u.movedPhase && !u.fought &&
-        (u.type === 'infantry' || u.type === 'armor'));
+      const units = sparesIn(state, p, n);
       if (units.length > 0) {
         from.set(n, units);
         reinforcements += units.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
@@ -139,7 +228,7 @@ function combatMove(state: GameState, p: Power): Action | null {
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
     if (from.size === 0 && (committed === 0 || air.length === 0)) continue; // nothing to send
     const ratio = (committed + reinforcements + airStrength) / defense;
-    if (ratio >= ATTACK_MARGIN && (!best || ratio > best.ratio)) best = { target, from, air, ratio };
+    if (ratio >= prof.margin && (!best || ratio > best.ratio)) best = { target, from, air, ratio };
   }
   if (best) {
     // ground waves first; once the ground is in, fly the air support
@@ -229,18 +318,59 @@ function noncombat(state: GameState, p: Power): Action | null {
       }
     }
   }
-  // 2) march one idle, safe-area ground unit toward the nearest enemy frontier
+  // 2) defensive powers under threat rally everything toward the capital
+  const prof = PROFILES[p];
+  if (prof.defendFirst && capitalThreatened(state, p)) {
+    const cap = CAPITAL_OF[p];
+    for (const [t, ts] of Object.entries(state.territories)) {
+      if (def(t).water || t === cap) continue;
+      const movers = ts.units.filter((u) =>
+        u.owner === p && !u.movedPhase && !u.fought &&
+        (u.type === 'infantry' || u.type === 'armor'));
+      if (movers.length === 0) continue;
+      const step = stepToward(state, t, cap, p);
+      if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
+    }
+    return null; // hold everything else
+  }
+  // 3) march one idle, safe-area ground unit toward the nearest enemy frontier
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water) continue;
     const hasAdjacentEnemy = def(t).connections.some((n) =>
       !def(n).water && terr(state, n).units.some((u) => isEnemy(u.owner, p) && isCombat(u)));
     if (hasAdjacentEnemy) continue; // already at the front — hold
-    const movers = ts.units.filter((u) =>
-      u.owner === p && !u.movedPhase && !u.fought &&
-      (u.type === 'infantry' || u.type === 'armor'));
+    const movers = t === CAPITAL_OF[p]
+      ? sparesIn(state, p, t)
+      : terr(state, t).units.filter((u) =>
+          u.owner === p && !u.movedPhase && !u.fought &&
+          (u.type === 'infantry' || u.type === 'armor'));
     if (movers.length === 0) continue;
     const step = stepTowardEnemy(state, t, p);
     if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
+  }
+  return null;
+}
+
+/** First step of the shortest friendly-land path from `from` to `goal`. */
+function stepToward(state: GameState, from: string, goal: string, p: Power): string | null {
+  const parent = new Map<string, string>([[from, '']]);
+  let frontier = [from];
+  for (let d = 0; d < 10 && frontier.length; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (def(n).water || parent.has(n)) continue;
+        if (!isFriendlySpace(state, n, p)) continue;
+        parent.set(n, cur);
+        if (n === goal) {
+          let node = n;
+          while (parent.get(node) !== from) node = parent.get(node)!;
+          return node;
+        }
+        next.push(n);
+      }
+    }
+    frontier = next;
   }
   return null;
 }
@@ -360,18 +490,26 @@ function seaPathTo(parents: Map<string, string>, from: string, to: string): stri
   return path;
 }
 
-/** Best enemy coastal territory to invade: weakest defense, then richest. */
+/** Enemy coastal territories to invade, best first. Scoring favors strategic
+ * value over raw weakness (log lesson: 'weakest anywhere' scattered the Allies
+ * into worthless Africa grabs while a 3-defender Moscow sat un-liberated):
+ * liberating an allied capital or hitting an enemy capital dominates, then
+ * income, against the cost of cracking the garrison. */
 function invasionTargets(state: GameState, p: Power): { land: string; zone: string; defense: number }[] {
-  const out: { land: string; zone: string; defense: number }[] = [];
+  const capitals = new Set(TURN_ORDER.map((q) => CAPITAL_OF[q]));
+  const out: { land: string; zone: string; defense: number; score: number }[] = [];
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water || state.neutrals.includes(t)) continue;
     const enemyHeld = ts.owner !== null && isEnemy(ts.owner, p);
     if (!enemyHeld) continue;
+    const defense = defenseOf(state, t, p);
+    const capitalBonus = capitals.has(t) ? 25 : 0;
+    const score = capitalBonus + def(t).ipc * 2 - defense * 1.5;
     for (const z of def(t).connections) {
-      if (def(z).water) out.push({ land: t, zone: z, defense: defenseOf(state, t, p) });
+      if (def(z).water) out.push({ land: t, zone: z, defense, score });
     }
   }
-  return out.sort((a, b) => a.defense - b.defense || def(b.land).ipc - def(a.land).ipc);
+  return out.sort((a, b) => b.score - a.score);
 }
 
 /** One transport decision per call: unload (assault/walkover) > sail > load. */
@@ -396,7 +534,7 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           const airStrength = defense > 0
             ? airSupport(state, p, t).reduce((s, a) => s + atkVal(a.unit), 0)
             : 0;
-          if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= ATTACK_MARGIN) {
+          if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= PROFILES[p].margin) {
             return { kind: 'offload', transportId: tr.id, to: t };
           }
         }
@@ -414,21 +552,19 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
       }
 
       // 3) empty & unmoved → load 2 infantry (or 1 armor) from an adjacent coast
+      // (capital garrison floor respected via sparesIn — the rest is sealift)
       if (tr.cargo.length === 0 && !tr.movedPhase) {
         for (const t of def(zone).connections) {
           if (def(t).water) continue;
           const lts = terr(state, t);
           if (lts.owner !== p) continue;
-          const inf = lts.units.filter((u) =>
-            u.owner === p && u.type === 'infantry' && !u.movedPhase && !u.fought);
-          // keep one defender home unless the territory is far from the enemy
-          const spare = distanceToEnemy(state, t, p) > 2 ? inf : inf.slice(1);
-          if (spare.length >= 2) {
-            return { kind: 'load', unitIds: [spare[0].id, spare[1].id], transportId: tr.id };
+          const spares = sparesIn(state, p, t);
+          const inf = spares.filter((u) => u.type === 'infantry');
+          if (inf.length >= 2) {
+            return { kind: 'load', unitIds: [inf[0].id, inf[1].id], transportId: tr.id };
           }
-          const armor = lts.units.filter((u) =>
-            u.owner === p && u.type === 'armor' && !u.movedPhase && !u.fought);
-          if (armor.length >= 2) {
+          const armor = spares.filter((u) => u.type === 'armor');
+          if (armor.length >= 1 && spares.length >= 2) {
             return { kind: 'load', unitIds: [armor[0].id], transportId: tr.id };
           }
         }
