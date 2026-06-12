@@ -39,7 +39,7 @@ export function Lobby() {
       {!result && (
         <div>
           <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
-            <legend>AI opponents (strongest as Axis; plays no naval invasions yet)</legend>
+            <legend>AI opponents (attacks with air support and amphibious landings; strongest as Axis)</legend>
             {TURN_ORDER.map((p) => (
               <label key={p} style={{ display: 'inline-block', margin: '4px 10px' }}>
                 <input

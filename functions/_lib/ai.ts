@@ -11,7 +11,10 @@ import type { Env } from './gameServer';
 
 const codec = jsonCodec<GameState>();
 const PREFIX = /^v\d+:/;
-const MAX_STEPS = 3000;
+// Per-request slice: each step is a full engine apply (state clone + legality
+// work), and Pages Functions have a tight CPU budget — 3000 steps blew it
+// (Cloudflare 1102) on all-AI games. Polling clients resume the remainder.
+const MAX_STEPS = 250;
 
 function decodeSnapshot(raw: string): GameState {
   return codec.decode(raw.replace(PREFIX, ''));
@@ -29,8 +32,13 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
   const ai = state.ai;
   if (!ai || ai.length === 0) return false;
 
+  // adaptive slice: every step clones the whole state, so big late-game states
+  // get smaller slices to stay inside the Pages CPU budget
+  const unitCount = Object.values(state.territories).reduce((s, t) => s + t.units.length, 0);
+  const maxSteps = Math.max(25, Math.min(MAX_STEPS, Math.floor(40000 / Math.max(1, unitCount))));
+
   let steps = 0;
-  while (steps < MAX_STEPS) {
+  while (steps < maxSteps) {
     const actor = adapter.currentActor(state);
     if (!actor || !ai.includes(actor)) break;
     // heuristic first; fall back to a random legal action if it has no idea or

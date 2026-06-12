@@ -102,6 +102,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         </div>
         {artModal && <LoadArtModal onClose={() => setArtModal(false)} />}
         <AiTurnSummary gameId={gameId} view={view} />
+        <GameOverDialog gameId={gameId} view={view} you={you} client={client} />
         {selected && (
           <UnitPicker
             view={view}
@@ -133,6 +134,69 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
     </div>
   );
 }
+
+/** End-of-game dialog: result + optional log upload (logs feed AI tuning). */
+function GameOverDialog({
+  gameId, view, you, client,
+}: {
+  gameId: string; view: GameState; you: Power;
+  client: ReturnType<typeof makeClient>;
+}) {
+  const dismissKey = `aa-gameover-seen:${gameId}`;
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(dismissKey) === '1');
+  const [uploaded, setUploaded] = useState<'no' | 'busy' | 'done' | 'failed'>('no');
+  if (view.phase !== 'gameOver' || !view.winner || dismissed) return null;
+  const youWon = SIDE_OF_UI[you] === view.winner;
+  const close = () => { localStorage.setItem(dismissKey, '1'); setDismissed(true); };
+  const upload = async () => {
+    setUploaded('busy');
+    try {
+      // the server stores a full state snapshot (including the complete game log)
+      // with every report, so a small message is all the client needs to send
+      await client.report({
+        message: `GAME COMPLETE — ${view.winReason}. Uploaded by ${you} for AI tuning. ` +
+          `(rounds: ${view.round}, ai seats: ${(view.ai ?? []).join('/') || 'none'})`,
+        severity: 'feedback',
+        category: 'axis-allies-gamelog',
+      });
+      setUploaded('done');
+    } catch {
+      setUploaded('failed');
+    }
+  };
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{ background: '#26323f', borderRadius: 10, padding: 22, maxWidth: 440, color: '#e8e4d8', textAlign: 'center' }}>
+        <h2 style={{ marginTop: 0 }}>{youWon ? '🎉 Victory!' : 'Defeat'}</h2>
+        <p>
+          The <b>{view.winner === 'axis' ? 'Axis' : 'Allies'}</b> win — {view.winReason}.
+          {youWon ? ' Well played!' : ' Better luck next time.'}
+        </p>
+        <p style={{ fontSize: 13, opacity: 0.85 }}>
+          Uploading the game log helps improve the AI opponent — it shows us which
+          strategies beat it (or how it beat you). The log contains only game moves,
+          nothing personal.
+        </p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          {uploaded === 'done' ? (
+            <span style={{ color: '#9f9', alignSelf: 'center' }}>✓ Log uploaded — thank you!</span>
+          ) : (
+            <button style={{ padding: '8px 14px', cursor: 'pointer' }} disabled={uploaded === 'busy'} onClick={upload}>
+              {uploaded === 'busy' ? 'Uploading…' : uploaded === 'failed' ? 'Upload failed — retry?' : 'Upload game log'}
+            </button>
+          )}
+          <button style={{ padding: '8px 14px', cursor: 'pointer' }} onClick={close}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+const SIDE_OF_UI: Record<Power, 'axis' | 'allies'> = {
+  russia: 'allies', germany: 'axis', uk: 'allies', japan: 'axis', usa: 'allies',
+};
 
 /** Grouped unit selection: one row per (your) unit type with a count stepper
  * and none/all shortcuts — no more clicking 8 infantry checkboxes. */
