@@ -187,6 +187,27 @@ function embarkCoast(state: GameState, p: Power, from: string): string | null {
   return best?.t ?? null;
 }
 
+/** A worthwhile site for a new industrial complex: owned since turn start,
+ * no factory yet, real income, reasonably near the enemy. */
+function goodFactorySite(state: GameState, p: Power): boolean {
+  for (const t of state.turnStartFriendly) {
+    if (def(t).water || def(t).ipc < 2) continue;
+    const ts = terr(state, t);
+    if (ts.owner !== p) continue;
+    if (ts.units.some((u) => u.type === 'factory')) continue;
+    if (distanceToEnemy(state, t, p) <= 4) return true;
+  }
+  return false;
+}
+
+function myFactoryCount(state: GameState, p: Power): number {
+  let n = 0;
+  for (const ts of Object.values(state.territories)) {
+    n += ts.units.filter((u) => u.owner === p && u.type === 'factory' && u.factoryLimited).length;
+  }
+  return n;
+}
+
 function myTransportCount(state: GameState, p: Power): number {
   let n = 0;
   for (const ts of Object.values(state.territories)) {
@@ -218,8 +239,14 @@ function purchase(state: GameState, p: Power): Action {
   // live report: Russia banked 155 IPCs while Japan held London with 2 units.
   const seaOnlyCapital = sealiftCapital(state, p);
   if ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital) {
-    const target = Math.min(7, Math.max(prof.transports, seaOnlyCapital ? 3 : 0, Math.ceil(homePile / 6)));
+    const target = Math.min(9, Math.max(prof.transports, seaOnlyCapital ? 3 : 0, Math.ceil(homePile / 5)));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
+  }
+  // a rich power plants forward complexes instead of ferrying everything from
+  // home (the real fix for stockpiled cash — live: USSR banked 263, Japan 60,
+  // both at the fleet cap). Max 4 new complexes, matching the physical set.
+  if (cash >= 30 && myFactoryCount(state, p) < 4 && goodFactorySite(state, p)) {
+    buy('factory', 1);
   }
   if (homePile > 35) {
     // the capital factory is clogged — but keep producing if another usable
@@ -526,11 +553,18 @@ function mobilize(state: GameState, p: Power): Action {
   const legal = legalActions(state, p);
   const places = legal.filter((a): a is Extract<Action, { kind: 'place' }> => a.kind === 'place');
   if (places.length === 0) return { kind: 'endPhase' };
-  // prefer the placement territory closest to enemy ground
-  let best: { a: Action; d: number } | null = null;
+  // score placements: units near the enemy; factories ALSO by income (a 1-IPC
+  // complex builds 1 unit/turn — live probe put one in Evenki); ships never
+  // into landlocked seas (live probe launched a transport onto the Caspian)
+  let best: { a: Action; score: number } | null = null;
   for (const a of places) {
-    const d = distanceToEnemy(state, a.territory, p);
-    if (!best || d < best.d) best = { a, d };
+    let score = -distanceToEnemy(state, a.territory, p);
+    if (a.type === 'factory') score += def(a.territory).ipc * 3;
+    if (a.seaZone) {
+      const openWater = def(a.seaZone).connections.some((n) => def(n).water);
+      if (!openWater) score -= 100; // a lake: last resort only
+    }
+    if (!best || score > best.score) best = { a, score };
   }
   return best!.a;
 }
