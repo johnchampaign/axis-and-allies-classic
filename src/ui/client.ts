@@ -25,7 +25,9 @@ export function makeClient(gameId: string, token: string): GameClientApi<GameSta
       fetch(`${base}/report${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submission),
+        // tag every report so triage can filter ours out of the shared
+        // dbf_reports table: /api/reports?category=axis-allies
+        body: JSON.stringify({ category: 'axis-allies', ...submission }),
       }).then((r) => j<{ reportId: string }>(r)),
   };
 }
