@@ -81,7 +81,9 @@ function moveLand(
 
   // combat move
   if (units.some((u) => u.type === 'aaGun')) return no('AA guns cannot make combat moves');
-  if (!destEnemy && !destNeutral) return no('combat moves must end in enemy or neutral territory');
+  if (!destEnemy && !destNeutral) {
+    return no('combat moves must end in enemy or neutral territory — move into friendly territory during the noncombat phase');
+  }
   if (steps === 2) {
     // armor only; blitz or move through friendly first (spec §4.1)
     if (units.some((u) => u.type !== 'armor')) return no('only armor moves 2');

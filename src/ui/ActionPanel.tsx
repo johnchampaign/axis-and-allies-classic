@@ -32,7 +32,8 @@ export function shortestPath(
   while (queue.length) {
     const cur = queue.shift()!;
     for (const n of TERR[cur]?.connections ?? []) {
-      if (parent.has(n) || avoidNeutrals.includes(n)) continue;
+      // neutrals may be entered (3-IPC violation) but never passed through
+      if (parent.has(n) || (avoidNeutrals.includes(n) && n !== to)) continue;
       if (n !== to && !ok(n)) continue;
       if (n === to && !ok(n)) continue;
       parent.set(n, cur);
@@ -303,7 +304,8 @@ function MovePanel({
           for (const n of TERR[cur].connections) {
             if (seen.has(n) || !passable(n)) continue;
             seen.set(n, dist);
-            next.push(n);
+            // neutrals are reachable destinations but never expanded through
+            if (!view.neutrals.includes(n)) next.push(n);
           }
         }
         frontier = next;
@@ -333,14 +335,26 @@ function MovePanel({
     const plans: { zone: string; loads: { transportId: number; unitIds: number[] }[]; loaded: number }[] = [];
     for (const z of TERR[selected].connections) {
       if (!TERR[z].water) continue;
-      const boats = (view.territories[z]?.units ?? []).filter(
+      const zoneUnits = view.territories[z]?.units ?? [];
+      const isInfCargo = (ids: number[]) =>
+        ids.every((id) => zoneUnits.find((u) => u.id === id)?.type === 'infantry');
+      // empty boats take 2 infantry or 1 heavy; a boat already carrying one
+      // infantry has room for exactly one more infantry (no mixing in Classic)
+      const empty = zoneUnits.filter(
         (u) => u.type === 'transport' && u.owner === you && u.cargo.length === 0 && !u.movedPhase,
       );
-      if (boats.length === 0) continue;
+      const halfFull = zoneUnits.filter(
+        (u) => u.type === 'transport' && u.owner === you && !u.movedPhase &&
+          u.cargo.length === 1 && isInfCargo(u.cargo),
+      );
+      if (empty.length === 0 && halfFull.length === 0) continue;
       const inf = landChosen.filter((u) => u.type === 'infantry');
       const heavy = landChosen.filter((u) => u.type !== 'infantry');
       const loads: { transportId: number; unitIds: number[] }[] = [];
-      for (const b of boats) {
+      for (const b of halfFull) {
+        if (inf.length > 0) loads.push({ transportId: b.id, unitIds: [inf.shift()!.id] });
+      }
+      for (const b of empty) {
         if (heavy.length > 0) loads.push({ transportId: b.id, unitIds: [heavy.shift()!.id] });
         else if (inf.length > 0) loads.push({ transportId: b.id, unitIds: inf.splice(0, 2).map((u) => u.id) });
         else break;
@@ -377,10 +391,12 @@ function MovePanel({
               )}
               <button style={primary} disabled={!dest}
                 onClick={() => {
-                  // one engine move per domain (mixed selections split automatically)
+                  // one engine move per domain (mixed selections split automatically).
+                  // Neutrals are always avoided: land can never pass through them and
+                  // air overflight triggers the 3-IPC violation (route manually if wanted).
                   const moves: Action[] = [];
                   for (const [d, units] of byDomain) {
-                    const path = shortestPath(selected, dest, phase === 'noncombat' ? view.neutrals : [], d);
+                    const path = shortestPath(selected, dest, view.neutrals, d);
                     if (!path) { return; }
                     moves.push({
                       kind: 'move', unitIds: units.map((u) => u.id), path,
