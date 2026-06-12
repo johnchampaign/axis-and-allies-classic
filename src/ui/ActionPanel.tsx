@@ -72,11 +72,11 @@ export function ActionPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const act = async (a: Action) => {
+  const act = async (a: Action | Action[]) => {
     setError(null);
     setBusy(true);
     try {
-      await submit(a);
+      for (const x of Array.isArray(a) ? a : [a]) await submit(x);
       clearSelection();
     } catch (e) {
       setError((e as Error).message);
@@ -122,7 +122,7 @@ export function ActionPanel({
   );
 }
 
-function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: Action) => void }) {
+function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: Action | Action[]) => void }) {
   const [dice, setDice] = useState(1);
   const cash = view.ipcs[you];
   return (
@@ -141,7 +141,7 @@ function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: A
   );
 }
 
-function PurchasePanel({ view, you, act }: { view: GameState; you: Power; act: (a: Action) => void }) {
+function PurchasePanel({ view, you, act }: { view: GameState; you: Power; act: (a: Action | Action[]) => void }) {
   const [order, setOrder] = useState<Partial<Record<UnitType, number>>>({});
   const discount = view.techs[you].includes('industrialTechnology') ? 1 : 0;
   const cost = (t: UnitType) => UNITS[t].cost - discount;
@@ -177,7 +177,7 @@ function PurchasePanel({ view, you, act }: { view: GameState; you: Power; act: (
 function MovePanel({
   view, you, act, selected, selectedUnits,
 }: {
-  view: GameState; you: Power; act: (a: Action) => void;
+  view: GameState; you: Power; act: (a: Action | Action[]) => void;
   selected: string | null; selectedUnits: number[];
 }) {
   const [dest, setDest] = useState('');
@@ -185,30 +185,64 @@ function MovePanel({
   const phase = view.phase;
   const units = selected ? view.territories[selected].units.filter((u) => u.owner === you) : [];
   const chosen = units.filter((u) => selectedUnits.includes(u.id));
-  const domain = chosen.length > 0 ? (UNITS[chosen[0].type].domain as 'land' | 'sea' | 'air') : 'air';
+  // chosen units grouped by movement domain; a mixed land+air selection is
+  // legal — the composer submits one engine move per domain (the engine keeps
+  // its moves single-domain), and destinations are limited to spaces EVERY
+  // group can reach.
+  const byDomain = useMemo(() => {
+    const m = new Map<'land' | 'sea' | 'air', Unit[]>();
+    for (const u of chosen) {
+      const d = UNITS[u.type].domain as 'land' | 'sea' | 'air';
+      if (!m.has(d)) m.set(d, []);
+      m.get(d)!.push(u);
+    }
+    return m;
+  }, [selectedUnits, selected]);
+
+  const budgetOf = (u: Unit): number => {
+    let move = UNITS[u.type].move;
+    if (view.techs[you].includes('longRangeAircraft')) {
+      if (u.type === 'fighter') move = 6;
+      if (u.type === 'bomber') move = 8;
+    }
+    return Math.max(0, move - u.movesUsed);
+  };
+
   const destOptions = useMemo(() => {
     if (!selected || chosen.length === 0) return [];
-    const maxMove = Math.min(...chosen.map((u) => UNITS[u.type].move));
-    // offer everything within range over the unit's own domain (land units
-    // never route through sea zones, ships never over land; air over anything)
-    const passable = (t: string) =>
-      domain === 'air' ? true : domain === 'land' ? !TERR[t].water : TERR[t].water;
-    const out: { tid: string; dist: number }[] = [];
-    const seen = new Map<string, number>([[selected, 0]]);
-    let frontier = [selected];
-    for (let d = 1; d <= Math.max(maxMove, 1); d++) {
-      const next: string[] = [];
-      for (const cur of frontier) {
-        for (const n of TERR[cur].connections) {
-          if (seen.has(n) || !passable(n)) continue;
-          seen.set(n, d);
-          out.push({ tid: n, dist: d });
-          next.push(n);
+    // reachable set per domain (BFS over that domain's passable spaces),
+    // then intersect across domains
+    let combined: Map<string, number> | null = null;
+    for (const [d, units] of byDomain) {
+      const maxMove = Math.min(...units.map(budgetOf));
+      const passable = (t: string) =>
+        d === 'air' ? true : d === 'land' ? !TERR[t].water : TERR[t].water;
+      const seen = new Map<string, number>([[selected, 0]]);
+      let frontier = [selected];
+      for (let dist = 1; dist <= Math.max(maxMove, 0); dist++) {
+        const next: string[] = [];
+        for (const cur of frontier) {
+          for (const n of TERR[cur].connections) {
+            if (seen.has(n) || !passable(n)) continue;
+            seen.set(n, dist);
+            next.push(n);
+          }
+        }
+        frontier = next;
+      }
+      seen.delete(selected);
+      if (combined === null) {
+        combined = seen;
+      } else {
+        for (const k of [...combined.keys()]) {
+          if (!seen.has(k)) combined.delete(k);
+          else combined.set(k, Math.max(combined.get(k)!, seen.get(k)!));
         }
       }
-      frontier = next;
     }
-    return out.filter((o) => o.dist <= maxMove).sort((a, b) => a.dist - b.dist || tname(a.tid).localeCompare(tname(b.tid)));
+    return [...(combined ?? new Map()).entries()]
+      .map(([tid, dist]) => ({ tid, dist }))
+      .sort((a, b) => a.dist - b.dist || tname(a.tid).localeCompare(tname(b.tid)));
   }, [selected, selectedUnits]);
 
   // transports in adjacent sea zones we could load onto
@@ -250,9 +284,17 @@ function MovePanel({
               )}
               <button style={primary} disabled={!dest}
                 onClick={() => {
-                  const path = shortestPath(selected, dest, phase === 'noncombat' ? view.neutrals : [], domain);
-                  if (!path) return;
-                  act({ kind: 'move', unitIds: chosen.map((u) => u.id), path, ...(sbr ? { sbr: true } : {}) });
+                  // one engine move per domain (mixed selections split automatically)
+                  const moves: Action[] = [];
+                  for (const [d, units] of byDomain) {
+                    const path = shortestPath(selected, dest, phase === 'noncombat' ? view.neutrals : [], d);
+                    if (!path) { return; }
+                    moves.push({
+                      kind: 'move', unitIds: units.map((u) => u.id), path,
+                      ...(sbr && d === 'air' ? { sbr: true } : {}),
+                    });
+                  }
+                  act(moves);
                 }}>
                 Move ▸
               </button>
@@ -284,7 +326,7 @@ function MovePanel({
   );
 }
 
-function CombatPanel({ view, legal, act }: { view: GameState; legal: Action[]; act: (a: Action) => void }) {
+function CombatPanel({ view, legal, act }: { view: GameState; legal: Action[]; act: (a: Action | Action[]) => void }) {
   const battles = legal.filter((a) => a.kind === 'startBattle') as Extract<Action, { kind: 'startBattle' }>[];
   const offloads = legal.filter((a) => a.kind === 'offload') as Extract<Action, { kind: 'offload' }>[];
   return (
@@ -308,7 +350,7 @@ function CombatPanel({ view, legal, act }: { view: GameState; legal: Action[]; a
 function BattlePanel({
   view, you, legal, act, error, busy,
 }: {
-  view: GameState; you: Power; legal: Action[]; act: (a: Action) => void;
+  view: GameState; you: Power; legal: Action[]; act: (a: Action | Action[]) => void;
   error: string | null; busy: boolean;
 }) {
   const b = view.battle!;
@@ -372,7 +414,7 @@ function labelBattleAction(a: Action): string {
   }
 }
 
-function MobilizePanel({ view, act, selected }: { view: GameState; act: (a: Action) => void; selected: string | null }) {
+function MobilizePanel({ view, act, selected }: { view: GameState; act: (a: Action | Action[]) => void; selected: string | null }) {
   const pending = view.purchases;
   const counts = new Map<UnitType, number>();
   for (const p of pending) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);

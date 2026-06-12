@@ -82,11 +82,15 @@ function combatMove(state: GameState, p: Power): Action | null {
       return { kind: 'move', unitIds: [spare.id], path: [t, n] };
     }
   }
-  // 2) favorable assault: commit adjacent ground, one stack per call, to the
-  // most favorable defended neighbor. Units ALREADY committed (moved into the
-  // target this turn) count toward the attack, so multi-stack assaults keep
-  // reinforcing across calls instead of stalling after the first wave.
-  let best: { target: string; from: Map<string, Unit[]>; ratio: number } | null = null;
+  // 2) favorable assault: commit adjacent ground (then supporting air), one
+  // stack per call, to the most favorable defended neighbor. Units ALREADY
+  // committed count toward the attack, and so do fighters/bombers in range —
+  // without air in the evaluation the AI never sees a favorable attack against
+  // a properly defended border and just stockpiles.
+  let best: {
+    target: string; from: Map<string, Unit[]>;
+    air: { unit: Unit; at: string }[]; ratio: number;
+  } | null = null;
   for (const [target, ts] of Object.entries(state.territories)) {
     if (def(target).water || state.neutrals.includes(target)) continue;
     const enemyHeld = (ts.owner !== null && isEnemy(ts.owner, p)) ||
@@ -109,15 +113,45 @@ function combatMove(state: GameState, p: Power): Action | null {
         reinforcements += units.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
       }
     }
-    if (from.size === 0) continue; // nothing left to send
-    const ratio = (committed + reinforcements) / defense;
-    if (ratio >= ATTACK_MARGIN && (!best || ratio > best.ratio)) best = { target, from, ratio };
+    const air = airSupport(state, p, target);
+    const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
+    if (from.size === 0 && (committed === 0 || air.length === 0)) continue; // nothing to send
+    const ratio = (committed + reinforcements + airStrength) / defense;
+    if (ratio >= ATTACK_MARGIN && (!best || ratio > best.ratio)) best = { target, from, air, ratio };
   }
   if (best) {
-    const [fromT, units] = [...best.from.entries()][0];
-    return { kind: 'move', unitIds: units.map((u) => u.id), path: [fromT, best.target] };
+    // ground waves first; once the ground is in, fly the air support
+    const next = [...best.from.entries()][0];
+    if (next) {
+      const [fromT, units] = next;
+      return { kind: 'move', unitIds: units.map((u) => u.id), path: [fromT, best.target] };
+    }
+    const committedHere = terr(state, best.target).units.some((u) => u.owner === p && u.fought);
+    if (committedHere && best.air.length > 0) {
+      const a = best.air[0];
+      const range = airRange(state, a.unit) - a.unit.movesUsed;
+      const path = airPath(state, a.at, best.target, range, false);
+      if (path) return { kind: 'move', unitIds: [a.unit.id], path };
+    }
   }
   return null;
+}
+
+/** Own fighters/bombers that could join an attack on `target` and still get home. */
+function airSupport(state: GameState, p: Power, target: string): { unit: Unit; at: string }[] {
+  const out: { unit: Unit; at: string }[] = [];
+  for (const [t, ts] of Object.entries(state.territories)) {
+    for (const u of ts.units) {
+      if (u.owner !== p || UNITS[u.type].domain !== 'air' || u.fought || u.movedPhase) continue;
+      const budget = airRange(state, u) - u.movesUsed;
+      const path = airPath(state, t, target, budget, false);
+      if (!path) continue;
+      const after = budget - (path.length - 1);
+      if (hasLandingSpot(state, u, target, after)) out.push({ unit: u, at: t });
+      if (out.length >= 4) return out; // enough support; keep some air home
+    }
+  }
+  return out;
 }
 
 // --- combat phase ---

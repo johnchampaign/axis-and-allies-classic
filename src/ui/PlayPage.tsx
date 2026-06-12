@@ -103,29 +103,13 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         {artModal && <LoadArtModal onClose={() => setArtModal(false)} />}
         <AiTurnSummary gameId={gameId} view={view} />
         {selected && (
-          <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
-            <b>{tname(selected)}</b>
-            {view.territories[selected].owner && ` — ${POWER_NAME[view.territories[selected].owner!]}`}
-            <div>
-              {view.territories[selected].units.map((u) => (
-                <label key={u.id} style={{ display: 'inline-block', margin: '2px 6px', opacity: u.owner === you ? 1 : 0.6 }}>
-                  {u.owner === you && (
-                    <input
-                      type="checkbox"
-                      checked={selectedUnits.includes(u.id)}
-                      onChange={(e) =>
-                        setSelectedUnits(e.target.checked
-                          ? [...selectedUnits, u.id]
-                          : selectedUnits.filter((x) => x !== u.id))}
-                    />
-                  )}
-                  <span style={{ color: POWER_COLOR[u.owner] }}>■</span> {UNIT_NAME[u.type]}
-                  {u.cargo.length > 0 && ` (${u.cargo.length} aboard)`}
-                </label>
-              ))}
-              {view.territories[selected].units.length === 0 && ' empty'}
-            </div>
-          </div>
+          <UnitPicker
+            view={view}
+            you={you}
+            selected={selected}
+            selectedUnits={selectedUnits}
+            setSelectedUnits={setSelectedUnits}
+          />
         )}
         <Log view={view} />
       </div>
@@ -146,6 +130,74 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         </div>
         <HoverPanel state={view} tid={hovered ?? selected} artActive={useArt} />
       </div>
+    </div>
+  );
+}
+
+/** Grouped unit selection: one row per (your) unit type with a count stepper
+ * and none/all shortcuts — no more clicking 8 infantry checkboxes. */
+function UnitPicker({
+  view, you, selected, selectedUnits, setSelectedUnits,
+}: {
+  view: GameState; you: Power; selected: string;
+  selectedUnits: number[]; setSelectedUnits: (ids: number[]) => void;
+}) {
+  const units = view.territories[selected].units;
+  const mine = units.filter((u) => u.owner === you);
+  const groups = new Map<string, Unit[]>();
+  for (const u of mine) {
+    if (!groups.has(u.type)) groups.set(u.type, []);
+    groups.get(u.type)!.push(u);
+  }
+  // units that haven't moved yet first, so steppers pick movable ones
+  for (const list of groups.values()) {
+    list.sort((a, b) => Number(!!a.movedPhase || !!a.fought) - Number(!!b.movedPhase || !!b.fought));
+  }
+  const others = units.filter((u) => u.owner !== you);
+  const otherCounts = new Map<string, number>();
+  for (const u of others) {
+    const k = `${u.owner}:${u.type}`;
+    otherCounts.set(k, (otherCounts.get(k) ?? 0) + 1);
+  }
+  const setCount = (type: string, n: number) => {
+    const ids = groups.get(type)!.map((u) => u.id);
+    const keepOthers = selectedUnits.filter((id) => !ids.includes(id));
+    setSelectedUnits([...keepOthers, ...ids.slice(0, n)]);
+  };
+  const sBtn: React.CSSProperties = {
+    background: '#3d5166', color: '#e8e4d8', border: '1px solid #557', borderRadius: 5,
+    padding: '2px 9px', margin: '0 2px', cursor: 'pointer',
+  };
+  return (
+    <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
+      <b>{tname(selected)}</b>
+      {view.territories[selected].owner && ` — ${POWER_NAME[view.territories[selected].owner!]}`}
+      {units.length === 0 && <div style={{ opacity: 0.6 }}>empty</div>}
+      {[...groups.entries()].map(([type, list]) => {
+        const picked = list.filter((u) => selectedUnits.includes(u.id)).length;
+        const cargoNote = list.reduce((s, u) => s + u.cargo.length, 0);
+        return (
+          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
+            <span style={{ minWidth: 150 }}>
+              <span style={{ color: POWER_COLOR[you] }}>■</span> {UNIT_NAME[type]} ×{list.length}
+              {cargoNote > 0 && ` (${cargoNote} aboard)`}
+            </span>
+            <button style={sBtn} onClick={() => setCount(type, 0)}>none</button>
+            <button style={sBtn} onClick={() => setCount(type, Math.max(0, picked - 1))}>−</button>
+            <b style={{ minWidth: 22, textAlign: 'center' }}>{picked}</b>
+            <button style={sBtn} onClick={() => setCount(type, Math.min(list.length, picked + 1))}>+</button>
+            <button style={sBtn} onClick={() => setCount(type, list.length)}>all</button>
+          </div>
+        );
+      })}
+      {[...otherCounts.entries()].map(([k, n]) => {
+        const [owner, type] = k.split(':') as [Power, string];
+        return (
+          <div key={k} style={{ opacity: 0.6, margin: '2px 0' }}>
+            <span style={{ color: POWER_COLOR[owner] }}>■</span> {POWER_NAME[owner]} {UNIT_NAME[type]} ×{n}
+          </div>
+        );
+      })}
     </div>
   );
 }
