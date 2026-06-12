@@ -389,8 +389,11 @@ function airSupport(state: GameState, p: Power, target: string): { unit: Unit; a
   return out;
 }
 
-/** One favorable fleet engagement per call: adjacent warships gang up on an
- * enemy-held sea zone when the strength ratio clears the profile margin. */
+/** One fleet engagement per call: warships within sailing range (2 zones)
+ * CONCENTRATE on an enemy-held sea zone, with carrier air counted and flown
+ * in after the ships — the AI's Pearl Harbor (a player demonstrated the
+ * scattered-fleet strike; the old doctrine could only use adjacent ships
+ * and no aircraft, so massing was impossible). */
 function navalAttack(state: GameState, p: Power): Action | null {
   const prof = PROFILES[p];
   for (const [zone, ts] of Object.entries(state.territories)) {
@@ -401,22 +404,54 @@ function navalAttack(state: GameState, p: Power): Action | null {
     const committed = ts.units
       .filter((u) => u.owner === p && isCombat(u) && UNITS[u.type].domain === 'sea')
       .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
-    const from = new Map<string, Unit[]>();
-    let reinforcements = 0;
-    for (const n of def(zone).connections) {
-      if (!def(n).water) continue;
-      const ships = terr(state, n).units.filter((u) =>
-        u.owner === p && !u.movedPhase && !u.fought && u.cargo.length === 0 &&
-        (u.type === 'battleship' || u.type === 'submarine' || u.type === 'carrier'));
-      if (ships.length > 0) {
-        from.set(n, ships);
-        reinforcements += ships.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+    // staging zones within 2 sailing moves (intermediates must be clear —
+    // ships cannot pass through enemy-occupied zones)
+    const stage = new Map<string, number>([[zone, 0]]);
+    for (const n1 of def(zone).connections) {
+      if (!def(n1).water || stage.has(n1)) continue;
+      if (!canalOpen(state, n1, zone, p)) continue;
+      stage.set(n1, 1);
+    }
+    for (const [n1, d1] of [...stage.entries()]) {
+      if (d1 !== 1 || isEnemyOccupied(state, n1, p)) continue; // can't sail THROUGH hostiles
+      for (const n2 of def(n1).connections) {
+        if (!def(n2).water || stage.has(n2)) continue;
+        if (!canalOpen(state, n2, n1, p)) continue;
+        stage.set(n2, 2);
       }
     }
-    if (from.size === 0) continue;
-    if ((committed + reinforcements) / defense >= prof.margin) {
-      const [fromZ, ships] = [...from.entries()][0];
-      return { kind: 'move', unitIds: ships.map((u) => u.id), path: [fromZ, zone] };
+    const from: { path: string[]; ships: Unit[] }[] = [];
+    let reinforcements = 0;
+    for (const [z, d] of stage) {
+      if (d === 0) continue;
+      const ships = terr(state, z).units.filter((u) =>
+        u.owner === p && !u.movedPhase && !u.fought && u.cargo.length === 0 &&
+        (u.type === 'battleship' || u.type === 'submarine' || u.type === 'carrier'));
+      if (ships.length === 0) continue;
+      // reconstruct a legal path back toward the target
+      const path = d === 1
+        ? [z, zone]
+        : [z, def(z).connections.find((m) => stage.get(m) === 1 && !isEnemyOccupied(state, m, p))!, zone];
+      if (d === 2 && !path[1]) continue;
+      from.push({ path, ships });
+      reinforcements += ships.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+    }
+    const air = airSupport(state, p, zone);
+    const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
+    if (from.length === 0 && (committed === 0 || air.length === 0)) continue;
+    if ((committed + reinforcements + airStrength) / defense >= prof.margin) {
+      const next = from[0];
+      if (next) {
+        return { kind: 'move', unitIds: next.ships.map((u) => u.id), path: next.path };
+      }
+      // ships are in — fly the air strike
+      const committedHere = ts.units.some((u) => u.owner === p && u.fought);
+      if (committedHere && air.length > 0) {
+        const a = air[0];
+        const range = airRange(state, a.unit) - a.unit.movesUsed;
+        const path = airPath(state, a.at, zone, range, false);
+        if (path) return { kind: 'move', unitIds: [a.unit.id], path };
+      }
     }
   }
   return null;
