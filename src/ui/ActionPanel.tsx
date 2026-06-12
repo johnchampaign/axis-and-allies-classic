@@ -256,16 +256,31 @@ function MovePanel({
   }, [selected, selectedUnits]);
 
   // transports in adjacent sea zones we could load onto
-  const loadTargets = useMemo(() => {
+  // bulk loading: distribute the chosen land units across a zone's transports
+  // (2 infantry per boat, armor/AA need an empty one — no mixing in Classic)
+  const loadPlans = useMemo(() => {
     if (!selected || chosen.length === 0 || TERR[selected].water) return [];
-    const out: { transport: Unit; zone: string }[] = [];
+    const landChosen = chosen.filter((u) => ['infantry', 'armor', 'aaGun'].includes(u.type));
+    if (landChosen.length === 0) return [];
+    const plans: { zone: string; loads: { transportId: number; unitIds: number[] }[]; loaded: number }[] = [];
     for (const z of TERR[selected].connections) {
       if (!TERR[z].water) continue;
-      for (const u of view.territories[z]?.units ?? []) {
-        if (u.type === 'transport' && u.owner === you) out.push({ transport: u, zone: z });
+      const boats = (view.territories[z]?.units ?? []).filter(
+        (u) => u.type === 'transport' && u.owner === you && u.cargo.length === 0 && !u.movedPhase,
+      );
+      if (boats.length === 0) continue;
+      const inf = landChosen.filter((u) => u.type === 'infantry');
+      const heavy = landChosen.filter((u) => u.type !== 'infantry');
+      const loads: { transportId: number; unitIds: number[] }[] = [];
+      for (const b of boats) {
+        if (heavy.length > 0) loads.push({ transportId: b.id, unitIds: [heavy.shift()!.id] });
+        else if (inf.length > 0) loads.push({ transportId: b.id, unitIds: inf.splice(0, 2).map((u) => u.id) });
+        else break;
       }
+      const loaded = loads.reduce((s, l) => s + l.unitIds.length, 0);
+      if (loaded > 0) plans.push({ zone: z, loads, loaded });
     }
-    return out;
+    return plans;
   }, [selected, selectedUnits, view]);
 
   const transports = selected && TERR[selected].water
@@ -310,16 +325,17 @@ function MovePanel({
               </button>
             </div>
           )}
-          {loadTargets.length > 0 && chosen.length > 0 && (
-            <div>
-              {loadTargets.map(({ transport, zone }) => (
-                <button key={transport.id} style={btn}
-                  onClick={() => act({ kind: 'load', unitIds: chosen.map((u) => u.id), transportId: transport.id })}>
-                  Load onto transport in {tname(zone)}
-                </button>
-              ))}
+          {loadPlans.map((plan) => (
+            <div key={plan.zone}>
+              <button style={btn}
+                onClick={() => act(plan.loads.map((l) => ({ kind: 'load' as const, unitIds: l.unitIds, transportId: l.transportId })))}>
+                Load {plan.loaded} unit{plan.loaded === 1 ? '' : 's'} onto {plan.loads.length} transport{plan.loads.length === 1 ? '' : 's'} in {tname(plan.zone)}
+              </button>
+              {plan.loaded < chosen.filter((u) => ['infantry', 'armor', 'aaGun'].includes(u.type)).length && (
+                <span style={{ fontSize: 12, opacity: 0.7 }}> (not enough transport space for the rest)</span>
+              )}
             </div>
-          )}
+          ))}
           {transports.map((tr) => (
             <div key={tr.id}>
               Transport #{tr.id} ({tr.cargo.length} aboard) unload to:

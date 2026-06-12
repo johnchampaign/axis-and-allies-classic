@@ -144,10 +144,17 @@ function UnitPicker({
 }) {
   const units = view.territories[selected].units;
   const mine = units.filter((u) => u.owner === you);
+  // transports (and carriers) split into separate rows by cargo state, so a
+  // loaded transport can be moved while its empty sister stays behind
+  const groupKey = (u: Unit) =>
+    (u.type === 'transport' || u.type === 'carrier') && u.cargo.length > 0
+      ? `${u.type}|${u.cargo.length}`
+      : u.type;
   const groups = new Map<string, Unit[]>();
   for (const u of mine) {
-    if (!groups.has(u.type)) groups.set(u.type, []);
-    groups.get(u.type)!.push(u);
+    const k = groupKey(u);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(u);
   }
   // units that haven't moved yet first, so steppers pick movable ones
   for (const list of groups.values()) {
@@ -159,8 +166,8 @@ function UnitPicker({
     const k = `${u.owner}:${u.type}`;
     otherCounts.set(k, (otherCounts.get(k) ?? 0) + 1);
   }
-  const setCount = (type: string, n: number) => {
-    const ids = groups.get(type)!.map((u) => u.id);
+  const setCount = (key: string, n: number) => {
+    const ids = groups.get(key)!.map((u) => u.id);
     const keepOthers = selectedUnits.filter((id) => !ids.includes(id));
     setSelectedUnits([...keepOthers, ...ids.slice(0, n)]);
   };
@@ -173,20 +180,21 @@ function UnitPicker({
       <b>{tname(selected)}</b>
       {view.territories[selected].owner && ` — ${POWER_NAME[view.territories[selected].owner!]}`}
       {units.length === 0 && <div style={{ opacity: 0.6 }}>empty</div>}
-      {[...groups.entries()].map(([type, list]) => {
+      {[...groups.entries()].map(([key, list]) => {
+        const type = key.split('|')[0];
+        const perCargo = Number(key.split('|')[1] ?? 0);
         const picked = list.filter((u) => selectedUnits.includes(u.id)).length;
-        const cargoNote = list.reduce((s, u) => s + u.cargo.length, 0);
         return (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
+          <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '4px 0' }}>
             <span style={{ minWidth: 150 }}>
               <span style={{ color: POWER_COLOR[you] }}>■</span> {UNIT_NAME[type]} ×{list.length}
-              {cargoNote > 0 && ` (${cargoNote} aboard)`}
+              {perCargo > 0 ? ` (${perCargo} aboard)` : (type === 'transport' ? ' (empty)' : '')}
             </span>
-            <button style={sBtn} onClick={() => setCount(type, 0)}>none</button>
-            <button style={sBtn} onClick={() => setCount(type, Math.max(0, picked - 1))}>−</button>
+            <button style={sBtn} onClick={() => setCount(key, 0)}>none</button>
+            <button style={sBtn} onClick={() => setCount(key, Math.max(0, picked - 1))}>−</button>
             <b style={{ minWidth: 22, textAlign: 'center' }}>{picked}</b>
-            <button style={sBtn} onClick={() => setCount(type, Math.min(list.length, picked + 1))}>+</button>
-            <button style={sBtn} onClick={() => setCount(type, list.length)}>all</button>
+            <button style={sBtn} onClick={() => setCount(key, Math.min(list.length, picked + 1))}>+</button>
+            <button style={sBtn} onClick={() => setCount(key, list.length)}>all</button>
           </div>
         );
       })}
