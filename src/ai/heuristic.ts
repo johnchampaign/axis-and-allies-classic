@@ -148,6 +148,12 @@ function purchase(state: GameState, p: Power): Action {
   let cash = state.ipcs[p];
   if (cash < 3) return { kind: 'endPhase' };
   const prof = PROFILES[p];
+  // don't buy what can't deploy: a huge home stockpile means production is
+  // outpacing sealift/fronts — bank the cash (also keeps long stalemates from
+  // ballooning into 1000-unit states that strain the live server)
+  const homePile = terr(state, CAPITAL_OF[p]).units
+    .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
+  if (homePile > 35) return { kind: 'endPhase' };
   const order: Partial<Record<UnitType, number>> = {};
   const buy = (t: UnitType, n: number) => {
     const cost = UNITS[t].cost - (state.techs[p].includes('industrialTechnology') ? 1 : 0);
