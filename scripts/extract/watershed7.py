@@ -54,21 +54,19 @@ for t in order:
 # ---- SEA: hard cells bounded by drawn lines; each cell -> its seed ----
 seawall=ndi.binary_dilation(lines & sea, iterations=1)
 cells,nc=ndi.label(sea & ~seawall, structure=np.ones((3,3)))
-# map cell -> set of seed-territory-ids whose core is in it
 inv={v:k for k,v in mid.items()}
+sea_labels=set(mid[t] for t in ids if is_sea(t))
+seedless=[]
 for c in range(1,nc+1):
     cm=cells==c
     seedlabs=np.unique(lab[cm & (lab>0)])
-    seedlabs=[s for s in seedlabs if inv[int(s)] and is_sea(inv[int(s)])]
+    seedlabs=[int(s) for s in seedlabs if int(s) in sea_labels]
     if len(seedlabs)==1:
         lab[cm]=seedlabs[0]
     elif len(seedlabs)==0:
-        pass # filled later by nearest sea label
+        seedless.append(c)
     else:
-        # multiple seeds merged via a gap: local Meyer split on line-distance elev
-        sub=cm
-        ev=(ndi.distance_transform_edt(~(lines)).astype(np.int32))
-        ev=(ev.max()-ev)
+        sub=cm; ev=ndi.distance_transform_edt(~lines).astype(np.int32); ev=(ev.max()-ev)
         h=[]
         for s in seedlabs:
             ys,xs=np.where((lab==s)&sub)
@@ -78,6 +76,22 @@ for c in range(1,nc+1):
             for ny,nx in ((y-1,x),(y+1,x),(y,x-1),(y,x+1)):
                 if 0<=ny<H and 0<=nx<W and sub[ny,nx] and lab[ny,nx]==0:
                     lab[ny,nx]=l; heapq.heappush(h,(int(ev[ny,nx]),ny,nx))
+# seedless sea cells (coastal water strips cut off from their zone's seed): assign
+# each to the ADJACENT sea zone it shares the most border with, iterating so cells
+# touching only other seedless cells resolve once their neighbour resolves.
+changed=True
+while seedless and changed:
+    changed=False; still=[]
+    for c in seedless:
+        cm=cells==c
+        ring=ndi.binary_dilation(cm,iterations=2)&~cm
+        neigh=lab[ring & (lab>0)]
+        neigh=neigh[np.isin(neigh,list(sea_labels))]
+        if neigh.size:
+            vals,cnts=np.unique(neigh,return_counts=True)
+            lab[cm]=int(vals[cnts.argmax()]); changed=True
+        else: still.append(c)
+    seedless=still
 
 # ---- LAND: domain-restricted Meyer watershed over drawn-line elevation ----
 ev_l=ndi.distance_transform_edt(~(lines & land)); ev_l=((ev_l.max()-ev_l)/max(1,ev_l.max())*255).astype(np.int32)
@@ -93,7 +107,13 @@ while h:
         if 0<=ny<H and 0<=nx<W and land[ny,nx] and lab[ny,nx]==0:
             lab[ny,nx]=l; heapq.heappush(h,(int(ev_l[ny,nx]),ny,nx))
 
-# fill any remaining unclaimed pixels by nearest label (within whole map)
+# fill remaining unclaimed pixels by nearest SAME-DOMAIN label
+for dom in (sea, land):
+    gap=(lab==0)&dom
+    if gap.any():
+        src=lab.copy(); src[~dom]=0
+        idx=ndi.distance_transform_edt(src==0,return_distances=False,return_indices=True)
+        filled=src[tuple(idx)]; lab[gap]=filled[gap]
 if (lab==0).any():
     idx=ndi.distance_transform_edt(lab==0,return_distances=False,return_indices=True); lab=lab[tuple(idx)]
 MIN=80
