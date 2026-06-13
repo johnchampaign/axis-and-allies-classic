@@ -32,10 +32,18 @@ def interior(t,rings):
             for dy in (0,-2,-4,-6,-8):
                 if inside([int(x),int(y+dy)],rings): return [int(x),int(y+dy)]
     return vb['anchors'][t]
+# anchor must be in the territory's ACTUAL pixels, not merely inside the filled
+# ring: a sea zone that encircles an island has a ring whose interior includes the
+# island, so a stored coord there would put the close-up/tokens on the island.
+def in_basin(a,t):
+    if t not in mid: return True
+    x=max(0,min(W-1,int(a[0]))); y=max(0,min(H-1,int(a[1])))
+    return lab[y,x]==mid[t]
 fixed=0
 for t,a in list(vb['anchors'].items()):
     rings=poly.get(t,[])
-    if rings and not inside(a,rings): vb['anchors'][t]=interior(t,rings); fixed+=1
+    if rings and (not inside(a,rings) or not in_basin(a,t)):
+        vb['anchors'][t]=interior(t,rings); fixed+=1
 vb['polygons']=poly
 vb['decoBoxes']=_meta.get('decoBoxes',[])  # token-overflow boxes to paint over in UI
 vb['_provenance']=('polygons extracted from the VASSAL map raster: build-vassal-board.mjs lays affine-warped '
