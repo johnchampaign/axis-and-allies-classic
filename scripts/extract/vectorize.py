@@ -79,6 +79,10 @@ for t in ids:
         ring=[[int(x),int(y)] for (y,x) in simp]
         rings.append((a,ring))
     rings.sort(key=lambda r:-r[0])
+    # keep the main body + only rings >=8% of it (drop tiny coastal-water slivers)
+    if rings:
+        big=rings[0][0]
+        rings=[r for r in rings if r[0]>=max(MIN_AREA, 0.08*big)]
     out[t]=[r for _,r in rings]
     total_rings+=len(out[t])
 
