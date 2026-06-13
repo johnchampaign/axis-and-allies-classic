@@ -10,10 +10,26 @@ import { POWER_COLOR } from './theme';
 import { TERRITORIES } from '../engine/data';
 
 const VB = vassalBoard as unknown as {
-  width: number; height: number; anchors: Record<string, [number, number]>;
+  width: number; height: number;
+  anchors: Record<string, [number, number]>;
+  polygons: Record<string, [number, number][][]>;
 };
 const SPRITE = 84; // px on the 2816x1623 board — sized to stay legible at typical screen widths
-const PICK_RADIUS = 90;
+
+// SVG path covering a territory's whole shape (all rings) — used as an invisible
+// hit target so the entire territory, not just the token area, selects on hover/click.
+const PATH_CACHE = new Map<string, string>();
+function polyPath(tid: string): string {
+  const cached = PATH_CACHE.get(tid);
+  if (cached !== undefined) return cached;
+  const rings = VB.polygons[tid] ?? [];
+  const d = rings
+    .filter((r) => r.length >= 3)
+    .map((r) => r.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x},${y}`).join(' ') + ' Z')
+    .join(' ');
+  PATH_CACHE.set(tid, d);
+  return d;
+}
 
 function stacks(units: Unit[]): { type: UnitType; owner: Power; count: number }[] {
   const m = new Map<string, { type: UnitType; owner: Power; count: number }>();
@@ -24,19 +40,6 @@ function stacks(units: Unit[]): { type: UnitType; owner: Power; count: number }[
     else m.set(k, { type: u.type, owner: u.owner, count: 1 });
   }
   return [...m.values()];
-}
-
-function nearestAnchor(e: React.MouseEvent<SVGSVGElement>): string | null {
-  const r = e.currentTarget.getBoundingClientRect();
-  const x = ((e.clientX - r.left) / r.width) * VB.width;
-  const y = ((e.clientY - r.top) / r.height) * VB.height;
-  let best: string | null = null;
-  let bestD = PICK_RADIUS;
-  for (const [tid, [ax, ay]] of Object.entries(VB.anchors)) {
-    const d = Math.hypot(ax - x, ay - y);
-    if (d < bestD) { bestD = d; best = tid; }
-  }
-  return best;
 }
 
 export const ArtBoard = memo(function ArtBoard({
@@ -54,8 +57,6 @@ export const ArtBoard = memo(function ArtBoard({
     <svg
       viewBox={`0 0 ${VB.width} ${VB.height}`}
       style={{ width: '100%', height: 'auto', borderRadius: 8, cursor: 'pointer' }}
-      onClick={(e) => { const t = nearestAnchor(e); if (t) onClickTerritory(t); }}
-      onMouseMove={(e) => onHoverTerritory?.(nearestAnchor(e))}
       onMouseLeave={() => onHoverTerritory?.(null)}
     >
       <defs>
@@ -71,10 +72,11 @@ export const ArtBoard = memo(function ArtBoard({
         </filter>
       </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
-      {selected && VB.anchors[selected] && (
-        <circle
-          cx={VB.anchors[selected][0]} cy={VB.anchors[selected][1]} r={60}
-          fill="none" stroke="#fff" strokeWidth={5} strokeDasharray="12 8" opacity={0.9}
+      {selected && VB.polygons[selected] && (
+        <path
+          d={polyPath(selected)} pointerEvents="none"
+          fill="rgba(255,255,255,0.12)" stroke="#fff" strokeWidth={5}
+          strokeDasharray="14 9" opacity={0.95}
         />
       )}
       {Object.entries(VB.anchors).map(([tid]) => {
@@ -127,6 +129,15 @@ export const ArtBoard = memo(function ArtBoard({
           </g>
         );
       })}
+      {/* invisible whole-territory hit targets (on top; sprites are pointerEvents:none
+          so they remain visible). Hover = close-up panel, click = select for orders. */}
+      {Object.keys(VB.polygons).map((tid) => (
+        <path
+          key={`hit-${tid}`} d={polyPath(tid)} fill="rgba(0,0,0,0)" pointerEvents="all"
+          onMouseEnter={() => onHoverTerritory?.(tid)}
+          onClick={(e) => { e.stopPropagation(); onClickTerritory(tid); }}
+        />
+      ))}
     </svg>
   );
 });
