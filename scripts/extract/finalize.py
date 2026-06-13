@@ -37,11 +37,11 @@ for t,a in list(vb['anchors'].items()):
     if rings and not inside(a,rings): vb['anchors'][t]=interior(t,rings); fixed+=1
 vb['polygons']=poly
 vb['_provenance']=('polygons extracted from the VASSAL map raster: build-vassal-board.mjs lays affine-warped '
- 'TripleA shapes as seeds; watershed6.py classifies land/sea by hue (warm=land, the coastline), removes the '
+ 'TripleA shapes as seeds; watershed7.py classifies land/sea by hue (warm=land, the coastline), removes the '
  'printed national roundels, and runs an eroded-core marker-controlled watershed RESTRICTED to each land/sea '
  'domain (so boundaries cannot cross a coast) over the drawn border lines; vectorize.py traces+simplifies; '
  'finalize.py merges (tiny territories fall back to the affine polygon). Coords only, no art. '
- 'Regenerate: node scripts/build-vassal-board.mjs; python scripts/extract/watershed6.py vectorize.py finalize.py')
+ 'Regenerate: node scripts/build-vassal-board.mjs; python scripts/extract/watershed7.py vectorize.py finalize.py')
 out=[t for t,a in vb['anchors'].items() if poly.get(t) and not inside(a,poly[t])]
 print(f'fellback(affine): {len(fellback)} {fellback}; anchors snapped: {fixed}; outside: {len(out)} {out}')
 json.dump(vb,open('data/vassal-board.json','w'),separators=(',',':'))
