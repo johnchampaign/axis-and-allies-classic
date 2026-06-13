@@ -5,13 +5,18 @@ im=np.asarray(Image.open('vmod_extracted/images/map.png').convert('RGB')).astype
 H,W,_=im.shape; R,G,B=im[:,:,0],im[:,:,1],im[:,:,2]; gray=im.mean(2); mn=np.minimum(np.minimum(R,G),B)
 
 # ---- 1. WATER by connectivity: blue ocean fading to white at shore, walled by coast ----
-bt=ndi.grey_closing(gray,size=7)-gray; lines=bt>16
+bt=ndi.grey_closing(gray,size=7)-gray
+lines=bt>16            # walls for splitting territories / sea zones
+coastlines=bt>12       # more sensitive: seal the coast against the water flood
 deep=(B>R+12)&(B>110); pale=(mn>180)
-flow=(deep|pale)&~ndi.binary_dilation(lines,iterations=1)
+flow=(deep|pale)&~ndi.binary_dilation(coastlines,iterations=2)
 lbl,n=ndi.label(flow,structure=np.ones((3,3)))
 water=np.isin(lbl,list(set(np.unique(lbl[deep&(lbl>0)]))))
-water=ndi.binary_closing(water,iterations=1); water=ndi.binary_fill_holes(water)&~ndi.binary_fill_holes(~water^water)
-water=np.isin(lbl,list(set(np.unique(lbl[deep&(lbl>0)]))))  # recompute clean
+# remove thin coast-gap tendrils that leak white-water into white/pale land (keep
+# wide bays via opening+regrow), then re-anchor to the deep ocean component
+w2=ndi.binary_dilation(ndi.binary_opening(water,iterations=3),iterations=3)&water
+lbl2,_=ndi.label(w2,structure=np.ones((3,3)))
+water=np.isin(lbl2,list(set(np.unique(lbl2[deep&(lbl2>0)]))))
 land=~water
 
 # ---- 2. OWNER-COLOUR classification on land; colour change = a wall ----
