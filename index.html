@@ -6,6 +6,9 @@
   <title>Axis &amp; Allies Classic</title>
   <style>
     :root { color-scheme: light; }
+    /* always reserve the vertical scrollbar gutter so the layout doesn't reflow
+       (map grow/shrink) when the scrollbar appears/disappears on content changes */
+    html { scrollbar-gutter: stable; }
     body { margin: 0; font-family: system-ui, sans-serif; background: #1c2733; color: #e8e4d8; }
     button { font: inherit; }
   </style>
