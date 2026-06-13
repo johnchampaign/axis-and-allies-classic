@@ -170,7 +170,7 @@ if clear.any():
 # ---- void the square token-overflow boxes (UL/UR/LR margins): they duplicate
 # island art and were being claimed by neighbouring territories (e.g. East Canada
 # grew into the UL boxes). Set to 0 = no territory; the UI paints them ocean-blue. ----
-DECO_BOXES=[[0,0,605,210],[1655,0,2816,205],[2330,1155,2816,1623]]
+DECO_BOXES=[[0,0,676,184],[1320,0,2816,179],[2345,1268,2816,1623]]
 for (x0,y0,x1,y1) in DECO_BOXES: labm[y0:y1,x0:x1]=0
 
 empties=[t for t in ids if (labm==mid[t]).sum()<80]
