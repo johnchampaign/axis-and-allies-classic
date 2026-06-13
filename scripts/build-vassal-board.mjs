@@ -124,72 +124,18 @@ const affine = ([x, y]) => [
   aff.y[0] * x + aff.y[1] * y + aff.y[2],
 ];
 
-// --- thin-plate spline TripleA -> VASSAL ---
-// U(r) = r^2 ln r, the TPS radial basis. Stabilize edge extrapolation by adding
-// border control points (image corners + edge midpoints) mapped via the affine,
-// so far from real stacks the warp degrades gracefully to the affine instead of
-// flying off.
-const U = (r2) => (r2 <= 0 ? 0 : 0.5 * r2 * Math.log(r2)); // r2 = squared distance
-const GW = geometry.width ?? 3500, GH = geometry.height ?? 2000;
-const border = [];
-for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) {
-  if (fx === 0.5 && fy === 0.5) continue; // skip centre
-  const s = [fx * GW, fy * GH];
-  border.push({ s, d: affine(s) });
-}
-const cps = [...pairs, ...border];
-const n = cps.length;
+// The warp is a plain global AFFINE. The two world maps are near-affine-related,
+// so an affine fits as well as any spline here (a thin-plate spline was tried and
+// rejected: it added no accuracy and oscillated wildly in control-point-sparse
+// regions like the Pacific). Being linear, it cannot distort or oscillate, and it
+// maps straight edges to straight edges, so sea-zone rectangles tessellate with
+// no densification. A single global map keeps shared borders shared. The polygons
+// are an APPROXIMATE registration of TripleA's shapes onto the VASSAL map (≈50px
+// mean) — good enough for token containment / click-hit, but NOT coastline-exact;
+// for that the polygons would have to be traced from the VASSAL image itself.
+const warp = affine;
 
-// Regularized TPS: adding `lambda` to the K diagonal trades exactness at the
-// control points for smoothness, so the warp stops chasing the noise in the
-// center-vs-stack-coord correspondence. lambda=0 = exact interpolation;
-// lambda->inf -> the affine. Chosen by leave-one-out below.
-function buildTPS(controls, component, lambda) {
-  const m = controls.length;
-  const L = Array.from({ length: m + 3 }, () => new Array(m + 3).fill(0));
-  const v = new Array(m + 3).fill(0);
-  for (let i = 0; i < m; i++) {
-    for (let j = 0; j < m; j++) {
-      const dx = controls[i].s[0] - controls[j].s[0], dy = controls[i].s[1] - controls[j].s[1];
-      L[i][j] = i === j ? lambda : U(dx * dx + dy * dy);
-    }
-    L[i][m] = 1; L[i][m + 1] = controls[i].s[0]; L[i][m + 2] = controls[i].s[1];
-    L[m][i] = 1; L[m + 1][i] = controls[i].s[0]; L[m + 2][i] = controls[i].s[1];
-    v[i] = controls[i].d[component];
-  }
-  return solve(L, v);
-}
-function evalTPS(w, controls, [x, y]) {
-  const m = controls.length;
-  let val = w[m] + w[m + 1] * x + w[m + 2] * y;
-  for (let i = 0; i < m; i++) {
-    const dx = x - controls[i].s[0], dy = y - controls[i].s[1];
-    val += w[i] * U(dx * dx + dy * dy);
-  }
-  return val;
-}
-
-// lambda = 0: EXACT interpolation. The warp passes through every control point,
-// so a control territory's warped center lands exactly on its stack coordinate
-// (no per-territory translation needed — that translation is what breaks the
-// jigsaw tessellation). A single global warp maps every shared border vertex to
-// one point regardless of which territory owns it, so territories still fit
-// together exactly on the VASSAL map. (Smoothing was tried and rejected: it
-// pulls the warp off the control points, forcing the tessellation-breaking
-// translate.)
-const LAMBDA = 0;
-const wx = buildTPS(cps, 0, LAMBDA), wy = buildTPS(cps, 1, LAMBDA);
-function tpsEval(w, [x, y]) {
-  let val = w[n] + w[n + 1] * x + w[n + 2] * y;
-  for (let i = 0; i < n; i++) {
-    const dx = x - cps[i].s[0], dy = y - cps[i].s[1];
-    val += w[i] * U(dx * dx + dy * dy);
-  }
-  return val;
-}
-const warp = (p) => [evalTPS(wx, cps, p), evalTPS(wy, cps, p)];
-
-// --- residual report ---
+const ea = err(affine);
 function err(fn) {
   let sum = 0, worst = 0;
   for (const { s, d } of pairs) {
@@ -198,53 +144,27 @@ function err(fn) {
   }
   return { mean: sum / pairs.length, worst };
 }
-const ea = err(affine);
-const et = err(warp); // should be ~0: exact TPS hits every control point
-console.log(`affine baseline: mean ${ea.mean.toFixed(0)}px, worst ${ea.worst.toFixed(0)}px`);
-console.log(`exact TPS (${pairs.length} stacks + ${border.length} edge): control-point residual mean ${et.mean.toFixed(2)}px, worst ${et.worst.toFixed(2)}px`);
-
-// Densify a ring before warping: insert points so no source edge is longer than
-// maxSeg. A nonlinear warp bends a long straight edge into a curve, but a 2-point
-// edge is drawn as a chord that diverges from that curve mid-span — so sparse
-// rectangles (sea zones) bow apart and overlap. Densified edges follow the warp
-// curve, and abutting polygons sharing an edge densify identically, so they stay
-// aligned. Land coastlines already have dense vertices; this mainly fixes seas.
-const MAX_SEG = 50; // source-space px (TripleA 3500x2000)
-function densify(ring) {
-  const out = [];
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i], b = ring[(i + 1) % ring.length];
-    out.push(a);
-    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const steps = Math.floor(len / MAX_SEG);
-    for (let k = 1; k < steps; k++) {
-      const t = k / steps;
-      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
-    }
-  }
-  return out;
-}
+console.log(`affine warp on ${pairs.length} control points: mean ${ea.mean.toFixed(0)}px, worst ${ea.worst.toFixed(0)}px`);
 
 // --- emit warped polygons + anchors for every territory ---
-// Every vertex goes through the SAME global warp and nothing else — so shared
-// borders stay shared and territories tessellate on the VASSAL map exactly as
-// they do on the filled board. The anchor is the warped center, which at
-// lambda=0 equals the module's exact setup-stack coordinate for the 55 control
-// territories and is a smooth interpolation for the rest.
+// One global affine for every vertex (shared borders stay shared → tessellation).
+// Anchor is the authoritative module stack coordinate where known, else the
+// warped center; it is stored separately from the polygon, so anchors are exact
+// even though the polygon shape is only approximate.
 const anchors = {};
 const polygons = {};
 for (const [tid, g] of Object.entries(geometry.territories)) {
-  const anchor = warp(g.center);
+  const anchor = exact.get(tid) ?? warp(g.center);
   anchors[tid] = [Math.round(anchor[0]), Math.round(anchor[1])];
   polygons[tid] = g.polygons.map((poly) =>
-    densify(poly).map((pt) => {
+    poly.map((pt) => {
       const q = warp(pt);
       return [Math.round(q[0]), Math.round(q[1])];
     }),
   );
 }
 writeFileSync(new URL('../data/vassal-board.json', import.meta.url), JSON.stringify({
-  _provenance: 'generated by scripts/build-vassal-board.mjs (TripleA polygons thin-plate-spline-warped onto the VASSAL map via buildFile setup-stack control points) — do not hand-edit; coordinate metadata only, no art',
+  _provenance: 'generated by scripts/build-vassal-board.mjs (TripleA polygons affine-warped onto the VASSAL map via buildFile setup-stack control points; approximate registration, not coastline-exact) — do not hand-edit; coordinate metadata only, no art',
   width: 2816, height: 1623,
   anchors,
   polygons,
