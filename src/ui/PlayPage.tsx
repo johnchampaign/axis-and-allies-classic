@@ -114,7 +114,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         )}
         <Log view={view} />
       </div>
-      <div style={{ flex: '1 1 35%', maxWidth: 460 }}>
+      <div style={{ flex: '1 1 35%', maxWidth: 460, minWidth: 0 }}>
         <ActionPanel
           view={view}
           you={you}
