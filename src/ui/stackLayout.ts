@@ -4,7 +4,7 @@
 // unlike the old affine-projected center which drifted across borders — and the
 // cluster is shrunk-to-fit / collapsed to a stacked pile by layoutTokensInPolygon.
 import {
-  area, layoutTokensInPolygon, poleOfInaccessibility, toPolygon,
+  area, layoutTokensInPolygon, poleOfInaccessibility, pointInPolygon, toPolygon,
   type Point, type Polygon,
 } from 'digital-boardgame-framework';
 import vassalBoard from '../../data/vassal-board.json';
@@ -13,21 +13,36 @@ const VB = vassalBoard as unknown as {
   width: number; height: number;
   anchors: Record<string, [number, number]>;
   polygons: Record<string, [number, number][][]>;
+  exactAnchors: string[];
 };
+// territories whose stored anchor is the module's real setup-stack coordinate
+const EXACT = new Set(VB.exactAnchors);
 
-// Largest-area ring per territory (token-layout polygon), cached.
+function ringsOf(tid: string): Polygon[] {
+  return (VB.polygons[tid] ?? []).map((r) => toPolygon(r));
+}
+function largestRing(rings: Polygon[]): Polygon | null {
+  let best: Polygon | null = null, bestA = -1;
+  for (const r of rings) { const a = area(r); if (a > bestA) { best = r; bestA = a; } }
+  return best;
+}
+
+// Token-layout polygon per territory, cached. For a multi-ring territory (island
+// group) prefer the ring that CONTAINS the authoritative module anchor — that's
+// the island the real game stacks pieces on — falling back to the largest ring.
 const polyCache = new Map<string, Polygon | null>();
 function layoutPolygon(tid: string): Polygon | null {
   if (polyCache.has(tid)) return polyCache.get(tid)!;
-  const rings = (VB.polygons[tid] ?? []).map((r) => toPolygon(r));
-  let best: Polygon | null = null;
-  let bestA = -1;
-  for (const r of rings) {
-    const a = area(r);
-    if (a > bestA) { best = r; bestA = a; }
+  const rings = ringsOf(tid);
+  const stored = EXACT.has(tid) ? VB.anchors[tid] : undefined;
+  let chosen: Polygon | null = null;
+  if (stored && rings.length > 1) {
+    const p = { x: stored[0], y: stored[1] };
+    chosen = rings.find((r) => pointInPolygon(p, r)) ?? null;
   }
-  polyCache.set(tid, best);
-  return best;
+  chosen = chosen ?? largestRing(rings);
+  polyCache.set(tid, chosen);
+  return chosen;
 }
 
 // Token anchor per territory. The stored anchor is authoritative — it's the
@@ -41,9 +56,13 @@ function anchorOf(tid: string): Point {
   if (cached) return cached;
   const stored = VB.anchors[tid];
   const poly = layoutPolygon(tid);
-  const a = stored
+  // authoritative module stack coordinate for control territories; the always-
+  // inside pole of inaccessibility for the rest (the warped center can fall
+  // outside a concave shape)
+  const a = stored && EXACT.has(tid)
     ? { x: stored[0], y: stored[1] }
-    : (poly ? poleOfInaccessibility(poly) : { x: 0, y: 0 });
+    : (poly ? poleOfInaccessibility(poly)
+      : (stored ? { x: stored[0], y: stored[1] } : { x: 0, y: 0 }));
   anchorCache.set(tid, a);
   return a;
 }

@@ -169,28 +169,16 @@ function evalTPS(w, controls, [x, y]) {
   return val;
 }
 
-// pick lambda by leave-one-out over the real stack pairs (border points are
-// always kept — they only stabilize the edges)
-function looError(lambda) {
-  let sum = 0, worst = 0;
-  for (let k = 0; k < pairs.length; k++) {
-    const rest = [...pairs.slice(0, k), ...pairs.slice(k + 1), ...border];
-    const wxk = buildTPS(rest, 0, lambda), wyk = buildTPS(rest, 1, lambda);
-    const e = Math.hypot(
-      evalTPS(wxk, rest, pairs[k].s) - pairs[k].d[0],
-      evalTPS(wyk, rest, pairs[k].s) - pairs[k].d[1],
-    );
-    sum += e; worst = Math.max(worst, e);
-  }
-  return { mean: sum / pairs.length, worst };
-}
-let bestLambda = 0, bestLoo = Infinity;
-for (const lambda of [0, 1e3, 1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]) {
-  const e = looError(lambda);
-  if (e.mean < bestLoo) { bestLoo = e.mean; bestLambda = lambda; }
-}
-
-const wx = buildTPS(cps, 0, bestLambda), wy = buildTPS(cps, 1, bestLambda);
+// lambda = 0: EXACT interpolation. The warp passes through every control point,
+// so a control territory's warped center lands exactly on its stack coordinate
+// (no per-territory translation needed — that translation is what breaks the
+// jigsaw tessellation). A single global warp maps every shared border vertex to
+// one point regardless of which territory owns it, so territories still fit
+// together exactly on the VASSAL map. (Smoothing was tried and rejected: it
+// pulls the warp off the control points, forcing the tessellation-breaking
+// translate.)
+const LAMBDA = 0;
+const wx = buildTPS(cps, 0, LAMBDA), wy = buildTPS(cps, 1, LAMBDA);
 function tpsEval(w, [x, y]) {
   let val = w[n] + w[n + 1] * x + w[n + 2] * y;
   for (let i = 0; i < n; i++) {
@@ -201,7 +189,7 @@ function tpsEval(w, [x, y]) {
 }
 const warp = (p) => [evalTPS(wx, cps, p), evalTPS(wy, cps, p)];
 
-// --- residual reports ---
+// --- residual report ---
 function err(fn) {
   let sum = 0, worst = 0;
   for (const { s, d } of pairs) {
@@ -211,29 +199,25 @@ function err(fn) {
   return { mean: sum / pairs.length, worst };
 }
 const ea = err(affine);
-const eTps = looError(bestLambda);
+const et = err(warp); // should be ~0: exact TPS hits every control point
 console.log(`affine baseline: mean ${ea.mean.toFixed(0)}px, worst ${ea.worst.toFixed(0)}px`);
-console.log(`TPS (${pairs.length} stacks + ${border.length} edge), lambda=${bestLambda}: ` +
-  `leave-one-out mean ${eTps.mean.toFixed(0)}px, worst ${eTps.worst.toFixed(0)}px`);
+console.log(`exact TPS (${pairs.length} stacks + ${border.length} edge): control-point residual mean ${et.mean.toFixed(2)}px, worst ${et.worst.toFixed(2)}px`);
 
 // --- emit warped polygons + anchors for every territory ---
-// Anchor priority: the VASSAL module's own setup-stack coordinate (authoritative
-// — it's literally where the official module draws that territory's pieces) where
-// known, else the warped TripleA center. The warped polygon is then TRANSLATED so
-// it wraps the anchor, guaranteeing the token cluster (which anchors here) sits
-// inside the shape and over the real territory.
+// Every vertex goes through the SAME global warp and nothing else — so shared
+// borders stay shared and territories tessellate on the VASSAL map exactly as
+// they do on the filled board. The anchor is the warped center, which at
+// lambda=0 equals the module's exact setup-stack coordinate for the 55 control
+// territories and is a smooth interpolation for the rest.
 const anchors = {};
 const polygons = {};
 for (const [tid, g] of Object.entries(geometry.territories)) {
-  const warpedCenter = warp(g.center);
-  const anchor = exact.get(tid) ?? warpedCenter;
+  const anchor = warp(g.center);
   anchors[tid] = [Math.round(anchor[0]), Math.round(anchor[1])];
-  const dx = anchor[0] - warpedCenter[0];
-  const dy = anchor[1] - warpedCenter[1];
   polygons[tid] = g.polygons.map((poly) =>
     poly.map((pt) => {
       const q = warp(pt);
-      return [Math.round(q[0] + dx), Math.round(q[1] + dy)];
+      return [Math.round(q[0]), Math.round(q[1])];
     }),
   );
 }
