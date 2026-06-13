@@ -1,6 +1,7 @@
 // Focused rules tests. State surgery on createGame() output, driven through the adapter
 // (tryApplyAction), so the public action path is what's exercised.
 import { describe, expect, it } from 'vitest';
+import { chooseAction } from '../src/ai/heuristic';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
 import { createGame } from '../src/engine/setup';
 import { beginTurnSnapshot } from '../src/engine/setup';
@@ -360,6 +361,26 @@ describe('air range — carrier meeting point', () => {
     // australia -> south-australia? route to solomon islands at exactly range 4
     const path = ['australia', 'north-australia-sea-zone', 'new-guinea-sea-zone', 'solomon-islands-sea-zone', 'solomon-islands'];
     expectReject(s, { kind: 'move', unitIds: [f.id], path }, 'uk', /no landing spot/);
+  });
+});
+
+describe('AI strategy', () => {
+  it('a loaded transport lands on a canal gate (Panama) over an equal-value neighbor (Cuba)', () => {
+    // player insight: taking Panama opens the canal for the Pacific fleet;
+    // Cuba is a same-income dead end
+    const s = at('combatMove', 'japan', 71);
+    // both USA coasts undefended so only strategic value decides
+    for (const land of ['panama', 'cuba', 'columbia']) {
+      s.territories[land].owner = 'usa';
+      s.territories[land].units = [];
+    }
+    s.territories['carribean-sea-zone'].units = [];
+    const tr = addUnit(s, 'carribean-sea-zone', 'transport', 'japan');
+    const i1 = addUnit(s, 'carribean-sea-zone', 'infantry', 'japan');
+    const i2 = addUnit(s, 'carribean-sea-zone', 'infantry', 'japan');
+    tr.cargo = [i1.id, i2.id];
+    const a = chooseAction(s, 'japan');
+    expect(a).toMatchObject({ kind: 'offload', transportId: tr.id, to: 'panama' });
   });
 });
 

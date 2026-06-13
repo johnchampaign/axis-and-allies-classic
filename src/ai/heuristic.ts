@@ -9,7 +9,7 @@
 //     factory nearest the enemy
 // Callers must validate via tryApplyAction and fall back to a random legal
 // action if the suggestion is rejected (never trust a heuristic blindly).
-import { def, UNITS } from '../engine/data';
+import { CANALS, def, UNITS } from '../engine/data';
 import {
   airRange, canalOpen, hasLandingSpot, isEnemy, isEnemyOccupied, isFriendlySpace, terr,
 } from '../engine/helpers';
@@ -744,12 +744,31 @@ function invasionTargets(state: GameState, p: Power): { land: string; zone: stri
     if (!enemyHeld) continue;
     const defense = defenseOf(state, t, p);
     const capitalBonus = capitals.has(t) ? 25 : 0;
-    const score = capitalBonus + def(t).ipc * 2 - defense * 1.5;
+    const score = capitalBonus + def(t).ipc * 2 - defense * 1.5 + canalBonus(state, t, p);
     for (const z of def(t).connections) {
       if (def(z).water) out.push({ land: t, zone: z, defense, score });
     }
   }
   return out.sort((a, b) => b.score - a.score);
+}
+
+/** Strategic value of capturing land `t`: a canal gate is worth a lot when
+ * taking it would let your alliance use a canal it can't currently use (player
+ * insight: Japan should take Panama to bring its Pacific fleet to the Atlantic,
+ * not grab Cuba for income). 0 for ordinary territory. */
+function canalBonus(state: GameState, t: string, p: Power): number {
+  let bonus = 0;
+  for (const c of CANALS) {
+    if (!c.requires.includes(t)) continue;
+    // would we then control every gate of this canal?
+    const others = c.requires.filter((g) => g !== t);
+    const othersOurs = others.every((g) => {
+      const o = terr(state, g).owner;
+      return o !== null && !isEnemy(o, p);
+    });
+    if (othersOurs) bonus += 20; // capturing t opens the canal for our fleet
+  }
+  return bonus;
 }
 
 /** One transport decision per call: unload (assault/walkover) > sail > load. */
@@ -769,6 +788,10 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           .flatMap((u) => u.cargo);
         const cargoUnits = ts.units.filter((u) => flotillaCargoIds.includes(u.id));
         const cargoAtk = cargoUnits.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+        // among coasts we can actually take, land on the most VALUABLE one —
+        // not just the first in adjacency order (canal gates + income, player
+        // insight: take Panama over Cuba to open the canal)
+        let bestBeach: { t: string; score: number } | null = null;
         for (const t of def(zone).connections) {
           if (def(t).water || state.neutrals.includes(t)) continue;
           const lts = terr(state, t);
@@ -781,9 +804,11 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
             ? airSupport(state, p, t).reduce((s, a) => s + atkVal(a.unit), 0)
             : 0;
           if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= PROFILES[p].margin) {
-            return { kind: 'offload', transportId: tr.id, to: t };
+            const score = def(t).ipc * 2 + canalBonus(state, t, p) - defense;
+            if (!bestBeach || score > bestBeach.score) bestBeach = { t, score };
           }
         }
+        if (bestBeach) return { kind: 'offload', transportId: tr.id, to: bestBeach.t };
       }
 
       // 2) loaded but not in position → sail toward the weakest reachable beach
