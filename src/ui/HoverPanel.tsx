@@ -13,7 +13,11 @@ import { NEUTRAL_COLOR, POWER_COLOR, POWER_NAME, SEA_COLOR, UNIT_NAME } from './
 const GEO = geometry as unknown as {
   territories: Record<string, { center: [number, number]; polygons: [number, number][][] }>;
 };
-const VB = vassalBoard as unknown as { width: number; height: number; anchors: Record<string, [number, number]> };
+const VB = vassalBoard as unknown as {
+  width: number; height: number; anchors: Record<string, [number, number]>;
+  decoBoxes?: [number, number, number, number][];
+};
+const OCEAN = '#80bae1';
 const TERR = Object.fromEntries(
   (territoriesJson.territories as { id: string; name: string; water: boolean; ipc: number; originalOwner: string | null }[])
     .map((t) => [t.id, t]),
@@ -94,6 +98,9 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
         </filter>
       </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
+      {(VB.decoBoxes ?? []).map(([x0, y0, x1, y1], i) => (
+        <rect key={`deco-${i}`} x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill={OCEAN} />
+      ))}
       {visible.map(([t, [px, py]]) => {
         const ts = state.territories[t];
         const units = ts?.units ?? [];

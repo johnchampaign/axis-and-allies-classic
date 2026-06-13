@@ -8,7 +8,8 @@ from scipy import ndimage as ndi
 vb=json.load(open('data/vassal-board.json')); affine=vb['polygons']
 extracted=json.load(open('scripts/extract/polygons.json'))
 W,H=vb['width'],vb['height']
-lab=np.load('scripts/extract/lab.npy'); mid=json.load(open('scripts/extract/meta.json'))['mid']
+_meta=json.load(open('scripts/extract/meta.json')); mid=_meta['mid']
+lab=np.load('scripts/extract/lab.npy')
 poly={}; fellback=[]
 for t in affine:
     r=extracted.get(t) or []
@@ -36,6 +37,7 @@ for t,a in list(vb['anchors'].items()):
     rings=poly.get(t,[])
     if rings and not inside(a,rings): vb['anchors'][t]=interior(t,rings); fixed+=1
 vb['polygons']=poly
+vb['decoBoxes']=_meta.get('decoBoxes',[])  # token-overflow boxes to paint over in UI
 vb['_provenance']=('polygons extracted from the VASSAL map raster: build-vassal-board.mjs lays affine-warped '
  'TripleA shapes as seeds; watershed7.py classifies land/sea by hue (warm=land, the coastline), removes the '
  'printed national roundels, and runs an eroded-core marker-controlled watershed RESTRICTED to each land/sea '

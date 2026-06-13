@@ -13,8 +13,10 @@ const VB = vassalBoard as unknown as {
   width: number; height: number;
   anchors: Record<string, [number, number]>;
   polygons: Record<string, [number, number][][]>;
+  decoBoxes?: [number, number, number, number][];
 };
 const SPRITE = 84; // px on the 2816x1623 board — sized to stay legible at typical screen widths
+const OCEAN = '#80bae1'; // median map ocean blue — paints over the token-overflow boxes
 
 // SVG path covering a territory's whole shape (all rings) — used as an invisible
 // hit target so the entire territory, not just the token area, selects on hover/click.
@@ -72,6 +74,10 @@ export const ArtBoard = memo(function ArtBoard({
         </filter>
       </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
+      {(VB.decoBoxes ?? []).map(([x0, y0, x1, y1], i) => (
+        <rect key={`deco-${i}`} x={x0} y={y0} width={x1 - x0} height={y1 - y0}
+          fill={OCEAN} pointerEvents="none" />
+      ))}
       {selected && VB.polygons[selected] && (
         <path
           d={polyPath(selected)} pointerEvents="none"
