@@ -94,7 +94,6 @@ function ArtCloseUp({ tid, state, mapUrl }: { tid: string; state: GameState; map
         </filter>
       </defs>
       <image href={mapUrl} width={VB.width} height={VB.height} />
-      <circle cx={ax} cy={ay} r={50} fill="none" stroke="#fff" strokeWidth={3} strokeDasharray="9 6" opacity={0.8} />
       {visible.map(([t, [px, py]]) => {
         const ts = state.territories[t];
         const units = ts?.units ?? [];
