@@ -17,6 +17,21 @@ water=np.isin(lbl,list(set(np.unique(lbl[deep&(lbl>0)]))))
 w2=ndi.binary_dilation(ndi.binary_opening(water,iterations=3),iterations=3)&water
 lbl2,_=ndi.label(w2,structure=np.ones((3,3)))
 water=np.isin(lbl2,list(set(np.unique(lbl2[deep&(lbl2>0)]))))
+# absorb printed labels floating in the ocean (e.g. 'North Atlantic'): thin dark
+# marks reachable from water become water, so the sea zone fills straight through
+sat=(np.maximum(np.maximum(R,G),B))-mn
+darktext=(~water)&(sat<28)&(gray<155)
+for _ in range(8):
+    grow=darktext & ndi.binary_dilation(water,iterations=1) & ~water
+    if not grow.any(): break
+    water=water|grow
+land=~water
+# explicit decoration rectangles (compass rose, title cartouche): large open-ocean
+# art at fixed spots that colour/connectivity can't classify; force water + erase
+# lines so the surrounding sea zone runs straight through (verified: no land here)
+for (x0,y0,x1,y1) in [(1213,1197,1500,1520),(232,1374,820,1622)]:
+    water[y0:y1,x0:x1]=True
+    lines[y0:y1,x0:x1]=False; coastlines[y0:y1,x0:x1]=False
 land=~water
 
 # ---- 2. OWNER-COLOUR classification on land; colour change = a wall ----
@@ -58,6 +73,19 @@ for t in sorted(ids,key=lambda t:int(masks[t].sum())):
         if len(ys): core=np.zeros_like(m); core[ys[0],xs[0]]=True
         else: continue
     labm[core]=mid[t]; seedcore[t]=core
+
+# ---- prune seedless isolated land blobs = decorations (compass, overflow-box
+# island duplicates, title): real territories all have a seed; blobs with none are
+# decoration -> convert to water so the surrounding sea fills straight through ----
+seedunion=np.zeros((H,W),bool)
+for _c in seedcore.values(): seedunion|=_c
+landcomp,_ncl=ndi.label(land,structure=np.ones((3,3)))
+has_seed=set(int(v) for v in np.unique(landcomp[seedunion]))-{0}
+deco=land & ~np.isin(landcomp,list(has_seed)) & (labm==0)
+if deco.any():
+    water=water|deco; land=~water
+    # rebuild sea structures below will use the updated water mask
+    print('seedless decoration land blobs -> water:',int(deco.sum()))
 
 # ---- 4. LAND watershed over wall-distance elevation, restricted to land ----
 ev=ndi.distance_transform_edt(~wall); ev=((ev.max()-ev)/max(1,ev.max())*255).astype(np.int32)
@@ -108,6 +136,27 @@ for dom in (water,land):
         idx=ndi.distance_transform_edt(src==0,return_distances=False,return_indices=True); f=src[tuple(idx)]; labm[gap]=f[gap]
 if (labm==0).any():
     idx=ndi.distance_transform_edt(labm==0,return_distances=False,return_indices=True); labm=labm[tuple(idx)]
+# ---- drop orphan components (overflow boxes, title cartouche, compass, over-grown
+# blobs): a territory's pixels NOT connected to its seed are decoration/error.
+# Real islands keep their seed component; decorations have no seed -> reassigned to
+# the surrounding label (the sea zone), so boundary lines run straight through. ----
+struct=np.ones((3,3)); clear=np.zeros((H,W),bool)
+for t in ids:
+    if t not in seedcore: continue
+    m=labm==mid[t]
+    comps,ncomp=ndi.label(m,structure=struct)
+    if ncomp<=1: continue
+    keep=set(int(v) for v in np.unique(comps[seedcore[t]]))-{0}
+    if not keep:
+        sizes=ndi.sum(np.ones_like(comps),comps,index=range(1,ncomp+1)); keep={int(np.argmax(sizes))+1}
+    for c in range(1,ncomp+1):
+        if c not in keep: clear|=(comps==c)
+if clear.any():
+    labm[clear]=0
+    idx=ndi.distance_transform_edt(labm==0,return_distances=False,return_indices=True)
+    nn=labm[tuple(idx)]; labm[clear]=nn[clear]
+    print('orphan decoration/overgrowth pixels reassigned:',int(clear.sum()))
+
 empties=[t for t in ids if (labm==mid[t]).sum()<80]
 print('water%% %.1f  empties %d %s'%(100*water.mean(),len(empties),empties[:12]))
 np.save('scripts/extract/lab.npy',labm); json.dump({'ids':ids,'mid':mid},open('scripts/extract/meta.json','w'))
