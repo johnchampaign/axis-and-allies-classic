@@ -1,0 +1,5 @@
+*.npy
+*.png
+meta.json
+polygons.json
+overlay.png
