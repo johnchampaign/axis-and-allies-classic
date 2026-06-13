@@ -3,14 +3,20 @@ import { createRoot } from 'react-dom/client';
 import { Lobby } from './Lobby';
 import { PlayPage } from './PlayPage';
 
-// dev-only geometry audit — lazy so it never ships in the normal play bundle
+// dev-only tools — lazy so they never ship in the normal play bundle
 const PolygonAudit = lazy(() =>
   import('./PolygonAudit').then((m) => ({ default: m.PolygonAudit })));
+const BoxEditor = lazy(() =>
+  import('./BoxEditor').then((m) => ({ default: m.BoxEditor })));
 
 function App() {
   const q = new URLSearchParams(location.search);
-  // dev override at the TOP: ?dev=polygons (or any ?dev=...) opens the audit
-  if (q.get('dev')) {
+  // dev overrides at the TOP. ?dev=boxes = adjust decoration boxes; else audit
+  const dev = q.get('dev');
+  if (dev === 'boxes') {
+    return <Suspense fallback={<div style={{ padding: 20 }}>loading…</div>}><BoxEditor /></Suspense>;
+  }
+  if (dev) {
     return <Suspense fallback={<div style={{ padding: 20 }}>loading audit…</div>}><PolygonAudit /></Suspense>;
   }
   const g = q.get('g');
