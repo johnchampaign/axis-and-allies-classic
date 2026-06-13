@@ -9,7 +9,17 @@ bt=ndi.grey_closing(gray,size=7)-gray
 lines=bt>16            # walls for splitting territories / sea zones
 coastlines=bt>12       # more sensitive: seal the coast against the water flood
 deep=(B>R+12)&(B>110); pale=(mn>180)
-flow=(deep|pale)&~ndi.binary_dilation(coastlines,iterations=2)
+# cool/neutral water: the Mediterranean (and similar enclosed seas) is a muted
+# grey-blue that fails deep AND pale, but it is never WARM like land — so anything
+# non-warm and reasonably bright is a water candidate. Connectivity + the coast
+# barrier still keep it from leaking into land.
+cool=(B>=R-2)&(mn>115)
+# barrier for the water flood is WARM LAND, not the tophat lines: open water is full
+# of grid lines/labels/texture that the tophat fires on, which fragmented enclosed
+# seas (the Mediterranean) and stopped them connecting to the ocean. Warm land
+# (R>B) is the true shore; cool/neutral water flows freely up to it.
+warmland=(R>B+8)
+flow=(deep|pale|cool)&~ndi.binary_dilation(warmland,iterations=2)
 lbl,n=ndi.label(flow,structure=np.ones((3,3)))
 water=np.isin(lbl,list(set(np.unique(lbl[deep&(lbl>0)]))))
 # remove thin coast-gap tendrils that leak white-water into white/pale land (keep
