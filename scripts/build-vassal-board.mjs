@@ -203,6 +203,28 @@ const et = err(warp); // should be ~0: exact TPS hits every control point
 console.log(`affine baseline: mean ${ea.mean.toFixed(0)}px, worst ${ea.worst.toFixed(0)}px`);
 console.log(`exact TPS (${pairs.length} stacks + ${border.length} edge): control-point residual mean ${et.mean.toFixed(2)}px, worst ${et.worst.toFixed(2)}px`);
 
+// Densify a ring before warping: insert points so no source edge is longer than
+// maxSeg. A nonlinear warp bends a long straight edge into a curve, but a 2-point
+// edge is drawn as a chord that diverges from that curve mid-span — so sparse
+// rectangles (sea zones) bow apart and overlap. Densified edges follow the warp
+// curve, and abutting polygons sharing an edge densify identically, so they stay
+// aligned. Land coastlines already have dense vertices; this mainly fixes seas.
+const MAX_SEG = 50; // source-space px (TripleA 3500x2000)
+function densify(ring) {
+  const out = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i], b = ring[(i + 1) % ring.length];
+    out.push(a);
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const steps = Math.floor(len / MAX_SEG);
+    for (let k = 1; k < steps; k++) {
+      const t = k / steps;
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
 // --- emit warped polygons + anchors for every territory ---
 // Every vertex goes through the SAME global warp and nothing else — so shared
 // borders stay shared and territories tessellate on the VASSAL map exactly as
@@ -215,7 +237,7 @@ for (const [tid, g] of Object.entries(geometry.territories)) {
   const anchor = warp(g.center);
   anchors[tid] = [Math.round(anchor[0]), Math.round(anchor[1])];
   polygons[tid] = g.polygons.map((poly) =>
-    poly.map((pt) => {
+    densify(poly).map((pt) => {
       const q = warp(pt);
       return [Math.round(q[0]), Math.round(q[1])];
     }),
