@@ -1,7 +1,12 @@
-// Token layout constrained to the territory's (affine-projected) shape on the
-// VASSAL map: candidate cells spiral out from the anchor; only cells whose
-// center passes a point-in-polygon test are used, shrinking the sprite when a
-// small territory can't fit the stack at full size.
+// Token layout for the classic-art board (VASSAL map, 2816x1623 space). The
+// math is the framework's (digital-boardgame-framework >= 0.9.1): tokens are
+// anchored at the polygon's pole of inaccessibility — always inside the shape,
+// unlike the old affine-projected center which drifted across borders — and the
+// cluster is shrunk-to-fit / collapsed to a stacked pile by layoutTokensInPolygon.
+import {
+  area, layoutTokensInPolygon, poleOfInaccessibility, toPolygon,
+  type Point, type Polygon,
+} from 'digital-boardgame-framework';
 import vassalBoard from '../../data/vassal-board.json';
 
 const VB = vassalBoard as unknown as {
@@ -10,49 +15,57 @@ const VB = vassalBoard as unknown as {
   polygons: Record<string, [number, number][][]>;
 };
 
-function pointInPoly(x: number, y: number, poly: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+// Largest-area ring per territory (token-layout polygon), cached.
+const polyCache = new Map<string, Polygon | null>();
+function layoutPolygon(tid: string): Polygon | null {
+  if (polyCache.has(tid)) return polyCache.get(tid)!;
+  const rings = (VB.polygons[tid] ?? []).map((r) => toPolygon(r));
+  let best: Polygon | null = null;
+  let bestA = -1;
+  for (const r of rings) {
+    const a = area(r);
+    if (a > bestA) { best = r; bestA = a; }
   }
-  return inside;
+  polyCache.set(tid, best);
+  return best;
 }
 
-function inTerritory(tid: string, x: number, y: number): boolean {
-  const polys = VB.polygons[tid];
-  if (!polys) return true; // no shape data — fall back to unconstrained
-  return polys.some((p) => pointInPoly(x, y, p));
+// Pole-of-inaccessibility anchor per territory, computed once (static geometry).
+const anchorCache = new Map<string, Point>();
+function anchorOf(tid: string): Point {
+  const cached = anchorCache.get(tid);
+  if (cached) return cached;
+  const poly = layoutPolygon(tid);
+  const a = poly
+    ? poleOfInaccessibility(poly)
+    : { x: VB.anchors[tid]?.[0] ?? 0, y: VB.anchors[tid]?.[1] ?? 0 };
+  anchorCache.set(tid, a);
+  return a;
 }
 
 export interface Cell { x: number; y: number; size: number }
 
-/** Positions for `count` tokens of `size` px centered near the territory's
- * anchor, kept inside its shape. Tries full size, then shrinks; if even tiny
- * tokens don't fit (islands), overlaps them at the anchor. */
+/** Positions for `count` tokens of `size` px inside territory `tid`, anchored at
+ * its visual centre and kept inside the shape. Returns top-left corners (so the
+ * art board can place <image> sprites directly) with the fitted size. */
 export function layoutStack(tid: string, count: number, size: number): Cell[] {
-  const [ax, ay] = VB.anchors[tid];
-  for (const scale of [1, 0.78, 0.6]) {
-    const s = size * scale;
-    const step = s * 0.92;
-    const cells: Cell[] = [];
-    // ring-order candidates around the anchor
-    for (let ring = 0; ring <= 3 && cells.length < count; ring++) {
-      for (let dy = -ring; dy <= ring && cells.length < count; dy++) {
-        for (let dx = -ring; dx <= ring && cells.length < count; dx++) {
-          if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
-          const cx = ax + dx * step;
-          const cy = ay + dy * step;
-          if (inTerritory(tid, cx, cy)) cells.push({ x: cx - s / 2, y: cy - s / 2, size: s });
-        }
-      }
-    }
-    if (cells.length >= count) return cells.slice(0, count);
+  const poly = layoutPolygon(tid);
+  const anchor = anchorOf(tid);
+  if (count <= 0) return [];
+  if (!poly) {
+    // no shape data — cascade from the stored anchor
+    const s = size * 0.6;
+    return Array.from({ length: count }, (_, i) => ({
+      x: anchor.x - s / 2 + i * s * 0.25, y: anchor.y - s / 2 + i * s * 0.15, size: s,
+    }));
   }
-  // tiny island: overlap with a slight cascade
-  const s = size * 0.6;
-  return Array.from({ length: count }, (_, i) => ({
-    x: ax - s / 2 + i * s * 0.25, y: ay - s / 2 + i * s * 0.15, size: s,
-  }));
+  const layout = layoutTokensInPolygon(poly, count, { tokenRadius: size / 2, anchor });
+  const s = size * layout.scale;
+  if (layout.stacked) {
+    // collapsed pile — cascade the sprites slightly at the anchor
+    return Array.from({ length: count }, (_, i) => ({
+      x: anchor.x - s / 2 + i * s * 0.18, y: anchor.y - s / 2 + i * s * 0.12, size: s,
+    }));
+  }
+  return layout.points.map((p) => ({ x: p.x - s / 2, y: p.y - s / 2, size: s }));
 }

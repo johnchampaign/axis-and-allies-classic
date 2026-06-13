@@ -2,6 +2,7 @@
 // Pure view: fills by owner, unit tallies at centers, click reports territory id.
 import { memo } from 'react';
 import geometry from '../../data/board-geometry.json';
+import { regionAnchor } from '../data/geometry';
 import type { GameState, Power, Unit } from '../engine/types';
 import { NEUTRAL_COLOR, POWER_COLOR, SEA_COLOR, UNIT_LETTER } from './theme';
 
@@ -73,13 +74,16 @@ export const Board = memo(function Board({
         const units = state.territories[tid]?.units ?? [];
         if (units.length === 0) return null;
         const rows = tallies(units);
+        // anchor tallies at the framework pole of inaccessibility (always inside
+        // the territory), not the centroid-like stored center
+        const anchor = regionAnchor(tid);
         return (
           <g key={`u-${tid}`} pointerEvents="none">
             {rows.map((r, i) => (
               <text
                 key={r.owner}
-                x={g.center[0]}
-                y={g.center[1] + i * 44}
+                x={anchor.x}
+                y={anchor.y + i * 44}
                 textAnchor="middle"
                 fontSize={42}
                 fontWeight={800}
