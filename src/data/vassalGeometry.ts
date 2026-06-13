@@ -35,13 +35,16 @@ export function vassalRegionPolygon(id: string): Polygon | null {
 }
 
 const anchorCache = new Map<string, Point>();
+// Match the board (stackLayout): the stored anchor is authoritative (the VASSAL
+// module's own setup-stack coordinate where known); only derive a pole if absent.
 export function vassalRegionAnchor(id: string): Point {
   const cached = anchorCache.get(id);
   if (cached) return cached;
+  const stored = data.anchors[id];
   const poly = vassalRegionPolygon(id);
-  const a = poly
-    ? poleOfInaccessibility(poly)
-    : { x: data.anchors[id]?.[0] ?? 0, y: data.anchors[id]?.[1] ?? 0 };
+  const a = stored
+    ? { x: stored[0], y: stored[1] }
+    : (poly ? poleOfInaccessibility(poly) : { x: 0, y: 0 });
   anchorCache.set(id, a);
   return a;
 }

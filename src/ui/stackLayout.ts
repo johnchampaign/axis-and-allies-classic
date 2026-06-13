@@ -30,15 +30,20 @@ function layoutPolygon(tid: string): Polygon | null {
   return best;
 }
 
-// Pole-of-inaccessibility anchor per territory, computed once (static geometry).
+// Token anchor per territory. The stored anchor is authoritative — it's the
+// VASSAL module's own setup-stack coordinate (where the real game draws that
+// territory's pieces) for the 55 territories that have one, and the warped
+// center otherwise; the polygon is built to wrap it. Only derive a pole of
+// inaccessibility if there is no stored anchor at all.
 const anchorCache = new Map<string, Point>();
 function anchorOf(tid: string): Point {
   const cached = anchorCache.get(tid);
   if (cached) return cached;
+  const stored = VB.anchors[tid];
   const poly = layoutPolygon(tid);
-  const a = poly
-    ? poleOfInaccessibility(poly)
-    : { x: VB.anchors[tid]?.[0] ?? 0, y: VB.anchors[tid]?.[1] ?? 0 };
+  const a = stored
+    ? { x: stored[0], y: stored[1] }
+    : (poly ? poleOfInaccessibility(poly) : { x: 0, y: 0 });
   anchorCache.set(tid, a);
   return a;
 }

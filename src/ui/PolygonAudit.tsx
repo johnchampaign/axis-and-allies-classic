@@ -6,12 +6,11 @@
 // shown in normal play. This file only renders; all math is the framework's.
 import { useMemo, useState } from 'react';
 import {
-  area, layoutTokensInPolygon, poleOfInaccessibilityWithClearance,
-  signedDistanceToPolygon, type Polygon,
+  area, layoutTokensInPolygon, signedDistanceToPolygon, type Polygon,
 } from 'digital-boardgame-framework';
-import { mapImage, regionIds, regionPolygon, regionRings } from '../data/geometry';
+import { mapImage, regionAnchor, regionIds, regionPolygon, regionRings } from '../data/geometry';
 import {
-  vassalImage, vassalRegionIds, vassalRegionPolygon, vassalRegionRings,
+  vassalImage, vassalRegionAnchor, vassalRegionIds, vassalRegionPolygon, vassalRegionRings,
 } from '../data/vassalGeometry';
 import { artUrl, MAP_IMAGE, useArtLoaded } from './artCache';
 import setupJson from '../../data/setup.json';
@@ -45,12 +44,16 @@ export function PolygonAudit() {
   const ids = vassal ? vassalRegionIds : regionIds;
   const polyOf = vassal ? vassalRegionPolygon : regionPolygon;
   const ringsOf = vassal ? vassalRegionRings : regionRings;
+  const anchorOf = vassal ? vassalRegionAnchor : regionAnchor;
   const mapUrl = vassal ? artUrl([MAP_IMAGE]) : null;
 
   const computed = useMemo(() => ids.map((id) => {
     const poly = polyOf(id)!;
     const rings = ringsOf(id);
-    const { point: anchor, clearance } = poleOfInaccessibilityWithClearance(poly);
+    // use the SAME anchor the board uses (authoritative stored coord in vassal
+    // mode, pole otherwise); clearance reflects that actual anchor
+    const anchor = anchorOf(id);
+    const clearance = signedDistanceToPolygon(anchor, poly);
     const count = forceCount > 0 ? forceCount : (setupCounts[id] ?? 0);
     const layout = count > 0
       ? layoutTokensInPolygon(poly, count, { tokenRadius, anchor })

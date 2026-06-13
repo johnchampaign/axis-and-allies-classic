@@ -1,9 +1,11 @@
-// Builds data/vassal-board.json: per-territory anchor positions on the VASSAL
-// map.png (2816x1623), for the "classic art" board mode. Sources:
-//  - vmod_extracted/buildFile SetupStack coordinates (exact, where a stack
-//    exists and the name maps to a territory id)
-//  - a least-squares affine fit (TripleA geometry -> VASSAL map) projecting
-//    every unanchored territory's center
+// Builds data/vassal-board.json: per-territory polygons + anchors on the VASSAL
+// map.png (2816x1623), for the "classic art" board mode. The authoritative
+// territory shapes are the TripleA polygons (data/board-geometry.json); this
+// script WARPS them from TripleA space into VASSAL-map space using a thin-plate
+// spline fit on the VASSAL setup-stack coordinates (exact, named control
+// points). TPS is exact at every control point and smooth between them — far
+// better than the old single global affine (50px mean / 216px worst error),
+// which is what made art-board token clusters sit off their territories.
 // The vmod itself is NEVER committed or distributed; players supply it
 // (https://vassalengine.org/library/projects/Axis__Allies). This script only
 // derives coordinate metadata. Run: node scripts/build-vassal-board.mjs
@@ -75,80 +77,171 @@ for (const [name, pts] of raw) {
 }
 if (unmatched.length) console.warn('unmatched stack names (ignored):', unmatched.join(', '));
 
-// --- least-squares affine fit: triplea center -> vassal anchor (land matches only) ---
+// control points: TripleA center (source) -> VASSAL stack coord (target)
 const pairs = [];
 for (const [tid, v] of exact) {
   const g = geometry.territories[tid];
   if (g) pairs.push({ s: g.center, d: v });
 }
+
+// --- linear solver (Gaussian elimination, partial pivoting) ---
+function solve(M, b) {
+  const n = b.length;
+  const a = M.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(a[r][c]) > Math.abs(a[piv][c])) piv = r;
+    [a[c], a[piv]] = [a[piv], a[c]];
+    for (let r = c + 1; r < n; r++) {
+      const f = a[r][c] / a[c][c];
+      for (let k = c; k <= n; k++) a[r][k] -= f * a[c][k];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = a[r][n];
+    for (let k = r + 1; k < n; k++) s -= a[r][k] * x[k];
+    x[r] = s / a[r][r];
+  }
+  return x;
+}
+
+// --- global affine (for residual baseline + edge stabilization) ---
 function fitAffine(ps) {
-  // solve [x' y']ᵀ = A·[x y 1]ᵀ via normal equations
-  let sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0, n = ps.length;
-  let bx = [0, 0, 0], by = [0, 0, 0];
+  let sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0;
+  const n = ps.length, bx = [0, 0, 0], by = [0, 0, 0];
   for (const { s: [x, y], d: [dx, dy] } of ps) {
     sxx += x * x; sxy += x * y; sx += x; syy += y * y; sy += y;
     bx[0] += x * dx; bx[1] += y * dx; bx[2] += dx;
     by[0] += x * dy; by[1] += y * dy; by[2] += dy;
   }
   const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, n]];
-  function solve3(A, b) {
-    const m = A.map((r, i) => [...r, b[i]]);
-    for (let c = 0; c < 3; c++) {
-      const p = m.slice(c).reduce((best, r, i) => Math.abs(r[c]) > Math.abs(m[best][c]) ? c + i : best, c);
-      [m[c], m[p]] = [m[p], m[c]];
-      for (let r = c + 1; r < 3; r++) {
-        const f = m[r][c] / m[c][c];
-        for (let k = c; k < 4; k++) m[r][k] -= f * m[c][k];
-      }
-    }
-    const x = [0, 0, 0];
-    for (let r = 2; r >= 0; r--) {
-      x[r] = (m[r][3] - m[r].slice(r + 1, 3).reduce((s, v, i) => s + v * x[r + 1 + i], 0)) / m[r][r];
-    }
-    return x;
-  }
-  return { x: solve3(M, bx), y: solve3(M, by) };
+  return { x: solve(M, bx), y: solve(M, by) };
 }
-const A = fitAffine(pairs);
-const project = ([x, y]) => [
-  A.x[0] * x + A.x[1] * y + A.x[2],
-  A.y[0] * x + A.y[1] * y + A.y[2],
+const aff = fitAffine(pairs);
+const affine = ([x, y]) => [
+  aff.x[0] * x + aff.x[1] * y + aff.x[2],
+  aff.y[0] * x + aff.y[1] * y + aff.y[2],
 ];
 
-// residual report
-let worst = 0, sum = 0;
-for (const { s, d } of pairs) {
-  const p = project(s);
-  const e = Math.hypot(p[0] - d[0], p[1] - d[1]);
-  sum += e; worst = Math.max(worst, e);
+// --- thin-plate spline TripleA -> VASSAL ---
+// U(r) = r^2 ln r, the TPS radial basis. Stabilize edge extrapolation by adding
+// border control points (image corners + edge midpoints) mapped via the affine,
+// so far from real stacks the warp degrades gracefully to the affine instead of
+// flying off.
+const U = (r2) => (r2 <= 0 ? 0 : 0.5 * r2 * Math.log(r2)); // r2 = squared distance
+const GW = geometry.width ?? 3500, GH = geometry.height ?? 2000;
+const border = [];
+for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) {
+  if (fx === 0.5 && fy === 0.5) continue; // skip centre
+  const s = [fx * GW, fy * GH];
+  border.push({ s, d: affine(s) });
 }
-console.log(`affine fit on ${pairs.length} anchors: mean err ${(sum / pairs.length).toFixed(0)}px, worst ${worst.toFixed(0)}px (vassal map is 2816x1623)`);
+const cps = [...pairs, ...border];
+const n = cps.length;
 
-// --- emit anchors + projected polygons for every territory ---
-// Polygons are the TripleA shapes pushed through the affine, then translated so
-// the projected center lands on the territory's (exact, when known) anchor.
-// Approximate — the two maps aren't identical projections — but good enough to
-// keep token layouts inside the printed region.
+// Regularized TPS: adding `lambda` to the K diagonal trades exactness at the
+// control points for smoothness, so the warp stops chasing the noise in the
+// center-vs-stack-coord correspondence. lambda=0 = exact interpolation;
+// lambda->inf -> the affine. Chosen by leave-one-out below.
+function buildTPS(controls, component, lambda) {
+  const m = controls.length;
+  const L = Array.from({ length: m + 3 }, () => new Array(m + 3).fill(0));
+  const v = new Array(m + 3).fill(0);
+  for (let i = 0; i < m; i++) {
+    for (let j = 0; j < m; j++) {
+      const dx = controls[i].s[0] - controls[j].s[0], dy = controls[i].s[1] - controls[j].s[1];
+      L[i][j] = i === j ? lambda : U(dx * dx + dy * dy);
+    }
+    L[i][m] = 1; L[i][m + 1] = controls[i].s[0]; L[i][m + 2] = controls[i].s[1];
+    L[m][i] = 1; L[m + 1][i] = controls[i].s[0]; L[m + 2][i] = controls[i].s[1];
+    v[i] = controls[i].d[component];
+  }
+  return solve(L, v);
+}
+function evalTPS(w, controls, [x, y]) {
+  const m = controls.length;
+  let val = w[m] + w[m + 1] * x + w[m + 2] * y;
+  for (let i = 0; i < m; i++) {
+    const dx = x - controls[i].s[0], dy = y - controls[i].s[1];
+    val += w[i] * U(dx * dx + dy * dy);
+  }
+  return val;
+}
+
+// pick lambda by leave-one-out over the real stack pairs (border points are
+// always kept — they only stabilize the edges)
+function looError(lambda) {
+  let sum = 0, worst = 0;
+  for (let k = 0; k < pairs.length; k++) {
+    const rest = [...pairs.slice(0, k), ...pairs.slice(k + 1), ...border];
+    const wxk = buildTPS(rest, 0, lambda), wyk = buildTPS(rest, 1, lambda);
+    const e = Math.hypot(
+      evalTPS(wxk, rest, pairs[k].s) - pairs[k].d[0],
+      evalTPS(wyk, rest, pairs[k].s) - pairs[k].d[1],
+    );
+    sum += e; worst = Math.max(worst, e);
+  }
+  return { mean: sum / pairs.length, worst };
+}
+let bestLambda = 0, bestLoo = Infinity;
+for (const lambda of [0, 1e3, 1e4, 3e4, 1e5, 3e5, 1e6, 3e6, 1e7]) {
+  const e = looError(lambda);
+  if (e.mean < bestLoo) { bestLoo = e.mean; bestLambda = lambda; }
+}
+
+const wx = buildTPS(cps, 0, bestLambda), wy = buildTPS(cps, 1, bestLambda);
+function tpsEval(w, [x, y]) {
+  let val = w[n] + w[n + 1] * x + w[n + 2] * y;
+  for (let i = 0; i < n; i++) {
+    const dx = x - cps[i].s[0], dy = y - cps[i].s[1];
+    val += w[i] * U(dx * dx + dy * dy);
+  }
+  return val;
+}
+const warp = (p) => [evalTPS(wx, cps, p), evalTPS(wy, cps, p)];
+
+// --- residual reports ---
+function err(fn) {
+  let sum = 0, worst = 0;
+  for (const { s, d } of pairs) {
+    const p = fn(s), e = Math.hypot(p[0] - d[0], p[1] - d[1]);
+    sum += e; worst = Math.max(worst, e);
+  }
+  return { mean: sum / pairs.length, worst };
+}
+const ea = err(affine);
+const eTps = looError(bestLambda);
+console.log(`affine baseline: mean ${ea.mean.toFixed(0)}px, worst ${ea.worst.toFixed(0)}px`);
+console.log(`TPS (${pairs.length} stacks + ${border.length} edge), lambda=${bestLambda}: ` +
+  `leave-one-out mean ${eTps.mean.toFixed(0)}px, worst ${eTps.worst.toFixed(0)}px`);
+
+// --- emit warped polygons + anchors for every territory ---
+// Anchor priority: the VASSAL module's own setup-stack coordinate (authoritative
+// — it's literally where the official module draws that territory's pieces) where
+// known, else the warped TripleA center. The warped polygon is then TRANSLATED so
+// it wraps the anchor, guaranteeing the token cluster (which anchors here) sits
+// inside the shape and over the real territory.
 const anchors = {};
 const polygons = {};
 for (const [tid, g] of Object.entries(geometry.territories)) {
-  const anchor = exact.get(tid) ?? project(g.center);
+  const warpedCenter = warp(g.center);
+  const anchor = exact.get(tid) ?? warpedCenter;
   anchors[tid] = [Math.round(anchor[0]), Math.round(anchor[1])];
-  const projCenter = project(g.center);
-  const dx = anchor[0] - projCenter[0];
-  const dy = anchor[1] - projCenter[1];
+  const dx = anchor[0] - warpedCenter[0];
+  const dy = anchor[1] - warpedCenter[1];
   polygons[tid] = g.polygons.map((poly) =>
-    poly.map(([px, py]) => {
-      const q = project([px, py]);
+    poly.map((pt) => {
+      const q = warp(pt);
       return [Math.round(q[0] + dx), Math.round(q[1] + dy)];
     }),
   );
 }
 writeFileSync(new URL('../data/vassal-board.json', import.meta.url), JSON.stringify({
-  _provenance: 'generated by scripts/build-vassal-board.mjs (vmod buildFile anchors + affine-projected TripleA centers/polygons) — do not hand-edit; coordinate metadata only, no art',
+  _provenance: 'generated by scripts/build-vassal-board.mjs (TripleA polygons thin-plate-spline-warped onto the VASSAL map via buildFile setup-stack control points) — do not hand-edit; coordinate metadata only, no art',
   width: 2816, height: 1623,
   anchors,
   polygons,
   exactAnchors: [...exact.keys()].sort(),
 }, null, 0));
-console.log(`anchors: ${Object.keys(anchors).length} territories (${exact.size} exact, rest projected); polygons emitted`);
+console.log(`warped ${Object.keys(polygons).length} territories (${exact.size} exact control points) into VASSAL space`);
