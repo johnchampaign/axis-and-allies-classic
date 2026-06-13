@@ -136,8 +136,13 @@ export const ArtBoard = memo(function ArtBoard({
         );
       })}
       {/* invisible whole-territory hit targets (on top; sprites are pointerEvents:none
-          so they remain visible). Hover = close-up panel, click = select for orders. */}
-      {Object.keys(VB.polygons).map((tid) => (
+          so they remain visible). Hover = close-up panel, click = select for orders.
+          Sea zones first so LAND paths render on top: a sea zone that encircles an
+          island is a filled ring (no hole cut out) and would otherwise cover the
+          island — land-on-top makes the island/coast win the hover. */}
+      {Object.keys(VB.polygons)
+        .sort((a, b) => (a.includes('sea-zone') ? 0 : 1) - (b.includes('sea-zone') ? 0 : 1))
+        .map((tid) => (
         <path
           key={`hit-${tid}`} d={polyPath(tid)} fill="rgba(0,0,0,0)" pointerEvents="all"
           onMouseEnter={() => onHoverTerritory?.(tid)}
