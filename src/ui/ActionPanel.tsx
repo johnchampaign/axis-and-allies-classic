@@ -4,8 +4,19 @@
 import { useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
-import type { Action, GameState, Power, Unit, UnitType } from '../engine/types';
+import { TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
 import { POWER_NAME, UNIT_NAME } from './theme';
+
+// Player-facing names + effect descriptions for the six weapon-development techs.
+// Effects mirror the engine (combat.ts / turn.ts / helpers.ts).
+const TECH_INFO: Record<Tech, { label: string; desc: string }> = {
+  jetPower: { label: 'Jet Power', desc: 'Your fighters defend on a 5 or less (instead of 4).' },
+  rockets: { label: 'Rockets', desc: 'Once per turn one of your AA guns fires a rocket at an enemy industrial complex up to 3 spaces away, destroying 1–6 of that power’s IPCs.' },
+  superSubs: { label: 'Super Submarines', desc: 'Your submarines hit on a 3 or less when attacking (instead of 2).' },
+  longRangeAircraft: { label: 'Long-Range Aircraft', desc: 'Your fighters move 6 and bombers move 8 (instead of 4 and 6).' },
+  industrialTechnology: { label: 'Industrial Technology', desc: 'Every unit you build costs 1 IPC less.' },
+  heavyBombers: { label: 'Heavy Bombers', desc: 'Your bombers roll 3 dice instead of 1 — both in battle and in strategic bombing raids.' },
+};
 
 const TERR = Object.fromEntries(
   (territoriesJson.territories as { id: string; name: string; water: boolean; connections: string[] }[])
@@ -212,7 +223,19 @@ function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: A
   return (
     <div style={box}>
       <b>Weapons development</b> — {cash} IPCs.
-      {view.techs[you].length > 0 && <div>Your techs: {view.techs[you].join(', ')}</div>}
+      <div style={{ margin: '4px 0' }}>
+        {TECH_BY_ROLL.map((t) => {
+          const owned = view.techs[you].includes(t);
+          return (
+            <div key={t} title={TECH_INFO[t].desc}
+              style={{ fontSize: 13, cursor: 'help', opacity: owned ? 1 : 0.8,
+                textDecoration: 'underline dotted', textUnderlineOffset: 3, width: 'fit-content' }}>
+              <span style={{ opacity: 0.7 }}>{owned ? '✅' : '•'}</span>{' '}
+              <b>{TECH_INFO[t].label}</b>{owned ? ' (developed)' : ''}
+            </div>
+          );
+        })}
+      </div>
       {allTechs ? (
         <div style={{ fontSize: 13, marginTop: 4 }}>
           🎓 You have developed every technology — nothing left to research.
