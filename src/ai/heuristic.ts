@@ -11,12 +11,29 @@
 // action if the suggestion is rejected (never trust a heuristic blindly).
 import { CANALS, def, UNITS } from '../engine/data';
 import {
-  airRange, canalOpen, hasLandingSpot, isEnemy, isEnemyOccupied, isFriendlySpace, terr,
+  airRange, canalOpen, hasLandingSpot, isEnemy, isEnemyOccupied, isFriendlySpace, productionLevel, terr,
 } from '../engine/helpers';
 import { airPath, legalActions } from '../engine/legal';
 import { openingAction } from './openings';
 import { pendingBattleSpaces } from '../engine/turn';
-import { CAPITAL_OF, TURN_ORDER, type Action, type GameState, type Power, type Unit, type UnitType } from '../engine/types';
+import { CAPITAL_OF, SIDE_OF, TURN_ORDER, type Action, type GameState, type Power, type Unit, type UnitType } from '../engine/types';
+
+// Economic victory fires when one side's combined production reaches this (spec
+// §11). The Allies must actively deny it — retake income, liberate capitals.
+const ECON_WIN = 84;
+/** Combined production of the side opposing p (Axis income when p is Allied). */
+function enemyIncome(state: GameState, p: Power): number {
+  return TURN_ORDER.filter((q) => isEnemy(q, p)).reduce((s, q) => s + productionLevel(state, q), 0);
+}
+/** Strategic worth of taking `target`: the income it denies the enemy, plus a big
+ *  bonus for liberating a friendly capital (restores that partner's whole economy
+ *  and denies the enemy a captured production centre). */
+function strategicValue(state: GameState, target: string, p: Power): number {
+  let v = def(target).ipc;
+  const capOwner = (Object.keys(CAPITAL_OF) as Power[]).find((q) => CAPITAL_OF[q] === target);
+  if (capOwner && SIDE_OF[capOwner] === SIDE_OF[p]) v += 25;
+  return v;
+}
 
 // Per-power strategy profiles (Classic is highly asymmetric — tuned from
 // uploaded human-vs-AI game logs; first lesson: AI Russia attacked outward and
@@ -328,9 +345,15 @@ function combatMove(state: GameState, p: Power): Action | null {
   // committed count toward the attack, and so do fighters/bombers in range —
   // without air in the evaluation the AI never sees a favorable attack against
   // a properly defended border and just stockpiles.
+  // Allied income-denial: prefer targets that strip Axis production or liberate a
+  // capital, and (when Axis is closing on the economic victory) accept worse odds
+  // to contest it rather than racing easy low-value grabs.
+  const ally = SIDE_OF[p] === 'allies';
+  const danger = ally && enemyIncome(state, p) >= ECON_WIN - 9;
+  const effMargin = danger ? prof.margin * 0.75 : prof.margin;
   let best: {
     target: string; from: Map<string, Unit[]>;
-    air: { unit: Unit; at: string }[]; ratio: number;
+    air: { unit: Unit; at: string }[]; ratio: number; score: number;
   } | null = null;
   for (const [target, ts] of Object.entries(state.territories)) {
     if (def(target).water || state.neutrals.includes(target)) continue;
@@ -357,7 +380,10 @@ function combatMove(state: GameState, p: Power): Action | null {
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
     if (from.size === 0 && (committed === 0 || air.length === 0)) continue; // nothing to send
     const ratio = (committed + reinforcements + airStrength) / defense;
-    if (ratio >= prof.margin && (!best || ratio > best.ratio)) best = { target, from, air, ratio };
+    // rank favorable attacks by odds plus (for Allies) the income/capital value
+    // taken — so they go for the territory that hurts the Axis economy most
+    const score = ratio + (ally ? 0.1 * strategicValue(state, target, p) : 0);
+    if (ratio >= effMargin && (!best || score > best.score)) best = { target, from, air, ratio, score };
   }
   if (best) {
     // ground waves first; once the ground is in, fly the air support
