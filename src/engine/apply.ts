@@ -5,7 +5,7 @@ import {
 } from './combat';
 import { applyLoad, applyMove, applyOffload } from './movement';
 import {
-  applyEndPhase, applyPlace, applyPurchase, applyRocketAttack, applyRollTech,
+  applyEndPhase, applyPlace, applyPurchase, applyRocketAttack, applyRollTech, applySurrender,
 } from './turn';
 import type { Action, EngineResult, GameState, Power } from './types';
 
@@ -41,6 +41,7 @@ function dispatch(state: GameState, a: Action, actor: Power): EngineResult {
     case 'pass': return applyPass(state, actor);
     case 'rocketAttack': return applyRocketAttack(state, a, actor);
     case 'place': return guardCurrent(state, actor) ?? applyPlace(state, a, actor);
+    case 'surrender': return applySurrender(state, actor);
     default: return { ok: false, reason: 'unknown action' };
   }
 }

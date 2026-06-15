@@ -4,7 +4,7 @@
 import { useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
-import { TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
+import { SIDE_OF, TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
 import { POWER_NAME, UNIT_NAME } from './theme';
 
 // Player-facing names + effect descriptions for the six weapon-development techs.
@@ -126,6 +126,7 @@ export function ActionPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
+  const [confirmSurrender, setConfirmSurrender] = useState(false);
 
   const act = async (a: Action | Action[]) => {
     setError(null);
@@ -200,6 +201,24 @@ export function ActionPanel({
           act({ kind: 'endPhase' });
         }}>
           End {view.phase} phase ▸
+        </button>
+      )}
+      {confirmSurrender ? (
+        <div style={{ ...box, border: '2px solid #c0392b' }}>
+          <b>Surrender the game?</b>
+          <div style={{ fontSize: 13, margin: '6px 0' }}>
+            This concedes immediately — the {SIDE_OF[you] === 'axis' ? 'Allies' : 'Axis'} win. It cannot be undone.
+          </div>
+          <button style={btn} disabled={busy} onClick={() => setConfirmSurrender(false)}>Keep playing</button>
+          <button style={{ ...btn, background: '#c0392b', color: '#fff' }} disabled={busy}
+            onClick={() => { setConfirmSurrender(false); act({ kind: 'surrender' }); }}>
+            Surrender
+          </button>
+        </div>
+      ) : (
+        <button style={{ ...btn, opacity: 0.6, fontSize: 12, marginTop: 8 }} disabled={busy}
+          onClick={() => setConfirmSurrender(true)}>
+          Surrender…
         </button>
       )}
     </div>

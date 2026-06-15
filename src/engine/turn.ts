@@ -91,6 +91,16 @@ function checkMilitaryVictory(state: GameState): void {
   }
 }
 
+// A player concedes: the opposing side wins immediately. Never offered in
+// legalActions, so the AI never surrenders — only a human submits it.
+export function applySurrender(state: GameState, actor: Power): EngineResult {
+  state.winner = SIDE_OF[actor] === 'axis' ? 'allies' : 'axis';
+  state.winReason = SIDE_OF[actor] === 'axis' ? 'Axis surrendered' : 'Allies surrendered';
+  state.phase = 'gameOver';
+  log(state, `${actor} surrenders — ${state.winner} win.`);
+  return ok;
+}
+
 // --- weapons development (spec §8) ---
 export function applyRollTech(
   state: GameState, a: Extract<Action, { kind: 'rollTech' }>, actor: Power,
