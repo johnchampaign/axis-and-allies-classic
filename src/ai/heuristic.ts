@@ -56,7 +56,11 @@ const PROFILES: Record<Power, Profile> = {
   // Moscow must not fall: turtle, big garrison, counterattack only around the core
   russia: { margin: 1.6, capitalGarrison: 8, defendFirst: true, attackRadius: 3, transports: 0, armorShare: 0.15 },
   // the aggressor that already wins benchmarks
-  germany: { margin: 1.25, capitalGarrison: 4, defendFirst: false, attackRadius: 0, transports: 1, armorShare: 0.33 },
+  // defendFirst + a bigger Berlin garrison: Germany was marching its whole army
+  // into Ukraine and leaving Berlin open for an Allied walk-in (uploaded log
+  // u70cz). It still attacks freely (attackRadius 0 = no leash) but keeps 6 home
+  // and rallies back the moment the capital is threatened.
+  germany: { margin: 1.25, capitalGarrison: 6, defendFirst: true, attackRadius: 0, transports: 1, armorShare: 0.33 },
   // island powers: real sealift, decent caution, keep the capital safe
   uk: { margin: 1.4, capitalGarrison: 5, defendFirst: false, attackRadius: 0, transports: 4, armorShare: 0.25 },
   japan: { margin: 1.25, capitalGarrison: 4, defendFirst: false, attackRadius: 0, transports: 4, armorShare: 0.33 },
