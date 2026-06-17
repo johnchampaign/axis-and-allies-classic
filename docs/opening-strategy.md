@@ -56,3 +56,33 @@ operation, but treat it separately from the free northern-Africa grabs above.
 
 USSR round-1 (Ukraine crush) is already encoded as the AI's opening book; a
 human-facing writeup can be added here later.
+
+## Allied endgame doctrine — grinding down Japan (from John, 2026-06-15)
+
+Once **Berlin is taken**, the Allies' job is to convert their economy into Japan's
+defeat. Priorities, in order:
+
+1. **Hold Berlin.** If there's any chance it's threatened, garrison it with enough
+   infantry that retaking it is never a worry. If it's ever liberated by the Axis,
+   **retaking it is top priority** (it's a production centre and half the win).
+2. **Liberate any captured Allied capital first.** Always the priority over offense.
+3. **Then grind Japan.** With Berlin safe and all Allied capitals held, Japan
+   falling is just a matter of time:
+   - **Take Japan's territories** to cut its income — fewer IPCs means fewer
+     replacement units to throw at the defense of the home islands.
+   - **Build a factory on a captured Japan-adjacent territory** — Manchuria,
+     Kwangtung, French Indo-China, or any Japanese island. From it you get **3
+     units/turn**.
+   - **Amphibious waves:** each turn build **transport + armor + battleship**; next
+     round sail them to Japan and attack; battleships add shore-bombardment punch
+     to each wave. Transports return to the factory after unloading. Once you have
+     **6 transports** stop building them (3 units/turn caps the throughput) and
+     switch to **3 armor/turn**, shuttling continuously.
+   - **Spend extra cash on bombers** built anywhere (the capital if nowhere else),
+     flown forward to join the attack.
+   - **USA** variant: build transports in **West US**, shuttle to Japan; station
+     **bombers in Alaska** to join.
+   - **UK / USSR:** if they can't build a factory closer, **buy as many bombers as
+     possible**, move them closer, and attack.
+   - The point isn't a one-turn conquest — it's **attrition**: three Allies throwing
+     waves at Japan faster than its income can replace losses, and it falls.
