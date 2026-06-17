@@ -170,7 +170,7 @@ export function ActionPanel({
         <MovePanel view={view} you={you} act={act} selected={selected} selectedUnits={selectedUnits} />
       )}
       {view.phase === 'combat' && <CombatPanel view={view} legal={legal} act={act} />}
-      {view.phase === 'mobilize' && <MobilizePanel view={view} act={act} selected={selected} />}
+      {view.phase === 'mobilize' && <MobilizePanel view={view} act={act} selected={selected} busy={busy} />}
       {confirmCrash ? (
         <div style={{ ...box, border: '2px solid #c0392b' }}>
           <b>⚠ Aircraft will be lost!</b>
@@ -649,7 +649,7 @@ function labelBattleAction(a: Action): string {
   }
 }
 
-function MobilizePanel({ view, act, selected }: { view: GameState; act: (a: Action | Action[]) => void; selected: string | null }) {
+function MobilizePanel({ view, act, selected, busy }: { view: GameState; act: (a: Action | Action[]) => void; selected: string | null; busy: boolean }) {
   const pending = view.purchases;
   const counts = new Map<UnitType, number>();
   for (const p of pending) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
@@ -666,19 +666,27 @@ function MobilizePanel({ view, act, selected }: { view: GameState; act: (a: Acti
         <div key={t}>
           {n}× {UNIT_NAME[t]}
           {selected && !selectedIsWater && UNITS[t].domain !== 'sea' && (
-            <button style={btn} onClick={() => act({ kind: 'place', type: t, territory: selected })}>
-              place in {tname(selected)}
-            </button>
+            <>
+              <button style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: selected })}>
+                place 1 in {tname(selected)}
+              </button>
+              {n > 1 && (
+                <button style={btn} disabled={busy}
+                  onClick={() => act(Array.from({ length: n }, () => ({ kind: 'place' as const, type: t, territory: selected })))}>
+                  place all {n} in {tname(selected)}
+                </button>
+              )}
+            </>
           )}
           {selected && !selectedIsWater && UNITS[t].domain === 'sea' &&
             (TERR[selected]?.connections ?? []).filter((z) => TERR[z].water).map((z) => (
-              <button key={z} style={btn} onClick={() => act({ kind: 'place', type: t, territory: selected, seaZone: z })}>
+              <button key={z} style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: selected, seaZone: z })}>
                 place in {tname(z)}
               </button>
             ))}
           {selectedIsWater && UNITS[t].domain === 'sea' && (
             factoriesForZone.length > 0 ? factoriesForZone.map((f) => (
-              <button key={f} style={btn} onClick={() => act({ kind: 'place', type: t, territory: f, seaZone: selected! })}>
+              <button key={f} style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: f, seaZone: selected! })}>
                 place in {tname(selected!)} (via {tname(f)} complex)
               </button>
             )) : (
