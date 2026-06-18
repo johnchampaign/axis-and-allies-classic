@@ -331,6 +331,13 @@ function purchase(state: GameState, p: Power): Action {
   let cash = state.ipcs[p];
   if (cash < 3) return { kind: 'endPhase' };
   const prof = PROFILES[p];
+  // In the crippled-enemy grind, a fight-to-the-death amphibious assault on a
+  // dense defence-2 stack is a LOSING trade for infantry (attack 1) but a
+  // winning one for armor (attack 3). Shift the buy hard toward armor so the
+  // waves actually crack the capital instead of feeding the grinder (observed:
+  // 41 successful infantry landings on Tokyo, yet its stack grew 22->39).
+  const grind = SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12;
+  const armorShare = grind ? 0.9 : prof.armorShare;
   // never buy what can't be placed (live report: blockaded Japan bought
   // transports every turn and forfeited them — its only port was enemy-held)
   if (state.turnStartFactories.length === 0) return { kind: 'endPhase' };
@@ -383,14 +390,15 @@ function purchase(state: GameState, p: Power): Action {
       const f = terr(state, t).units.find((u) => u.type === 'factory' && u.owner === p);
       forwardCapacity += f?.factoryLimited ? Math.max(1, def(t).ipc) : 8;
     }
-    buy('armor', Math.min(Math.floor(forwardCapacity / 3), Math.floor((cash * prof.armorShare) / UNITS.armor.cost)));
+    const armorCap = grind ? forwardCapacity : Math.floor(forwardCapacity / 3);
+    buy('armor', Math.min(armorCap, Math.floor((cash * armorShare) / UNITS.armor.cost)));
     const already = (order.armor ?? 0);
     buy('infantry', Math.max(0, forwardCapacity - already));
     if (Object.keys(order).length === 0) return { kind: 'endPhase' };
     return { kind: 'purchase', order };
   }
   if (!prof.defendFirst && cash >= 27) buy('fighter', 1); // one quality piece when rich
-  buy('armor', Math.floor((cash * prof.armorShare) / UNITS.armor.cost));
+  buy('armor', Math.floor((cash * armorShare) / UNITS.armor.cost));
   buy('infantry', 99); // the rest on infantry
   if (Object.keys(order).length === 0) return { kind: 'endPhase' };
   return { kind: 'purchase', order };
@@ -585,11 +593,18 @@ function navalAttack(state: GameState, p: Power): Action | null {
 
 // --- combat phase ---
 function combatPhase(state: GameState, p: Power): Action {
-  const pending = pendingBattleSpaces(state);
-  if (pending.length > 0) return { kind: 'startBattle', territory: pending[0] };
+  // Offload EVERY ready transport before resolving any battle, so all waves
+  // land into one combined assault instead of attacking piecemeal. Resolving a
+  // battle the instant the first transport unloads made each boat's 1-2 units
+  // fight the defending stack alone and die — 21 transports threw themselves at
+  // Tokyo one at a time and the stack only grew. (The engine rejects offload
+  // into an enemy-occupied sea zone, so a zone needing a naval battle still
+  // falls through to startBattle and clears first.)
   const legal = legalActions(state, p);
   const offload = legal.find((a) => a.kind === 'offload');
   if (offload) return offload;
+  const pending = pendingBattleSpaces(state);
+  if (pending.length > 0) return { kind: 'startBattle', territory: pending[0] };
   const rocket = rocketStrike(state, p);
   if (rocket) return rocket;
   return { kind: 'endPhase' };
@@ -936,8 +951,15 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           // forever (observed: 17 loaded transports idle → draw). Gated tightly
           // on enemyIncome so it never loosens commitment in a live economy.
           const crippled = SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12;
-          const bar = crippled ? 0.5 : PROFILES[p].margin;
-          if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= bar) {
+          const power = cargoAtk + committed + airStrength;
+          // Crippled endgame: throw ANY real wave at the capital regardless of
+          // odds. Allies can't combine fleets — each power assaults alone on its
+          // own turn, and no single national fleet out-punches a stacked Tokyo —
+          // so the only way through is fight-to-death attrition: every wave kills
+          // a few defenders the stripped enemy can't replace. The >=6 floor keeps
+          // us from trickling a lone boat into the meat grinder.
+          const commit = defense === 0 || (crippled && power >= 6) || power / defense >= PROFILES[p].margin;
+          if (commit) {
             const score = def(t).ipc * 2 + canalBonus(state, t, p) - defense;
             if (!bestBeach || score > bestBeach.score) bestBeach = { t, score };
           }
@@ -965,10 +987,17 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           if (lts.owner !== p) continue;
           const spares = sparesIn(state, p, t);
           const inf = spares.filter((u) => u.type === 'infantry');
+          const armor = spares.filter((u) => u.type === 'armor');
+          // In the crippled-enemy grind, load armor (attack 3) over 2 infantry
+          // (attack 2): a fight-to-the-death amphibious assault is won by total
+          // attack power, so harder-hitting cargo drains the defending stack.
+          const grind = SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12;
+          if (grind && armor.length >= 1 && spares.length >= 2) {
+            return { kind: 'load', unitIds: [armor[0].id], transportId: tr.id };
+          }
           if (inf.length >= 2) {
             return { kind: 'load', unitIds: [inf[0].id, inf[1].id], transportId: tr.id };
           }
-          const armor = spares.filter((u) => u.type === 'armor');
           if (armor.length >= 1 && spares.length >= 2) {
             return { kind: 'load', unitIds: [armor[0].id], transportId: tr.id };
           }
