@@ -846,7 +846,18 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           const airStrength = defense > 0
             ? airSupport(state, p, t).reduce((s, a) => s + atkVal(a.unit), 0)
             : 0;
-          if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= PROFILES[p].margin) {
+          // Endgame grind: when the enemy side is economically crippled (its
+          // combined production can no longer replace losses faster than the
+          // Allies inflict them), throw the waves in even on poor single-wave
+          // odds. Each amphibious wave is a losing trade per-unit, but the
+          // Allies rebuild ~34/turn while a stripped Japan rebuilds ~4 — so the
+          // attrition still ends with the capital falling. Without this the
+          // margin check parks a fully-loaded invasion fleet next to Tokyo
+          // forever (observed: 17 loaded transports idle → draw). Gated tightly
+          // on enemyIncome so it never loosens commitment in a live economy.
+          const crippled = SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12;
+          const bar = crippled ? 0.5 : PROFILES[p].margin;
+          if (defense === 0 || (cargoAtk + committed + airStrength) / defense >= bar) {
             const score = def(t).ipc * 2 + canalBonus(state, t, p) - defense;
             if (!bestBeach || score > bestBeach.score) bestBeach = { t, score };
           }
