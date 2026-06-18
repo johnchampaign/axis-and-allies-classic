@@ -255,6 +255,77 @@ function techRoll(state: GameState, p: Power): Action {
   return dice >= 1 ? { kind: 'rollTech', dice } : { kind: 'endPhase' };
 }
 
+// --- rockets (spec §8, tech 2) ---
+// With rockets developed, an AA gun within 3 board-steps of an enemy industrial
+// complex drains that power's treasury one die's worth every turn. In the Japan
+// grind this caps the 8-IPC replacement stream the amphibious override is already
+// out-attriting — exactly the player's "build AA guns near Japan, rockets lower
+// its income every turn" twist.
+
+/** True if `to` is within `max` board-steps of `from`, crossing sea zones —
+ *  mirrors the engine's rocket-range bfsDistance (turn.ts). */
+function withinSteps(from: string, to: string, max: number): boolean {
+  if (from === to) return true;
+  const seen = new Set([from]);
+  let frontier = [from];
+  for (let d = 1; d <= max; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (seen.has(n)) continue;
+        if (n === to) return true;
+        seen.add(n);
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  return false;
+}
+
+/** Enemy industrial complexes within rocket range (3) of one of p's AA guns. */
+function rocketStrike(state: GameState, p: Power): Action | null {
+  if (!state.techs[p].includes('rockets') || state.rocketsFiredThisTurn) return null;
+  const guns = Object.entries(state.territories)
+    .filter(([, ts]) => ts.units.some((u) => u.owner === p && u.type === 'aaGun'))
+    .map(([t]) => t);
+  if (guns.length === 0) return null;
+  let best: { from: string; target: string; ipc: number } | null = null;
+  for (const [t, ts] of Object.entries(state.territories)) {
+    if (def(t).water) continue;
+    if (!ts.units.some((u) => u.type === 'factory' && isEnemy(u.owner, p))) continue;
+    const from = guns.find((g) => withinSteps(g, t, 3));
+    if (!from) continue;
+    const ipc = def(t).ipc; // hit the richest reachable complex
+    if (!best || ipc > best.ipc) best = { from, target: t, ipc };
+  }
+  return best ? { kind: 'rocketAttack', from: best.from, target: best.target } : null;
+}
+
+/** Do we already own an AA gun within rocket range of an enemy complex? */
+function hasRocketBattery(state: GameState, p: Power): boolean {
+  const targets = Object.entries(state.territories)
+    .filter(([t, ts]) => !def(t).water && ts.units.some((u) => u.type === 'factory' && isEnemy(u.owner, p)))
+    .map(([t]) => t);
+  for (const [g, ts] of Object.entries(state.territories)) {
+    if (!ts.units.some((u) => u.owner === p && u.type === 'aaGun')) continue;
+    if (targets.some((t) => withinSteps(g, t, 3))) return true;
+  }
+  return false;
+}
+
+/** Can we place an AA gun (at a forward complex) within rocket range of an
+ *  enemy complex this turn? */
+function canSiteRocketBattery(state: GameState, p: Power): boolean {
+  const targets = Object.entries(state.territories)
+    .filter(([t, ts]) => !def(t).water && ts.units.some((u) => u.type === 'factory' && isEnemy(u.owner, p)))
+    .map(([t]) => t);
+  return state.turnStartFactories.some((f) =>
+    terr(state, f).owner === p &&
+    !terr(state, f).units.some((u) => u.type === 'aaGun') &&
+    targets.some((t) => withinSteps(f, t, 3)));
+}
+
 // --- purchase (spec §9.1) ---
 function purchase(state: GameState, p: Power): Action {
   let cash = state.ipcs[p];
@@ -291,6 +362,13 @@ function purchase(state: GameState, p: Power): Action {
   // both at the fleet cap). Max 4 new complexes, matching the physical set.
   if (cash >= 30 && myFactoryCount(state, p) < 4 && goodFactorySite(state, p)) {
     buy('factory', 1);
+  }
+  // Endgame rocket battery: with rockets developed and the enemy crippled, an AA
+  // gun at a forward complex within range of its industrial heart drains income
+  // every turn — choking the replacement stream the amphibious grind out-attrites.
+  if (SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12 && state.techs[p].includes('rockets')
+      && !hasRocketBattery(state, p) && canSiteRocketBattery(state, p)) {
+    buy('aaGun', 1);
   }
   if (homePile > 35) {
     // the capital is clogged: buy only what FORWARD factories can absorb this
@@ -512,6 +590,8 @@ function combatPhase(state: GameState, p: Power): Action {
   const legal = legalActions(state, p);
   const offload = legal.find((a) => a.kind === 'offload');
   if (offload) return offload;
+  const rocket = rocketStrike(state, p);
+  if (rocket) return rocket;
   return { kind: 'endPhase' };
 }
 
