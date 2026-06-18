@@ -11,7 +11,8 @@
 // action if the suggestion is rejected (never trust a heuristic blindly).
 import { CANALS, def, UNITS } from '../engine/data';
 import {
-  airRange, canalOpen, hasLandingSpot, isEnemy, isEnemyOccupied, isFriendlySpace, productionLevel, terr,
+  airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy, isEnemyOccupied,
+  isFriendlySpace, productionLevel, terr,
 } from '../engine/helpers';
 import { airPath, legalActions } from '../engine/legal';
 import { openingAction } from './openings';
@@ -75,7 +76,7 @@ export function chooseAction(state: GameState, power: Power): Action | null {
   const book = openingAction(state, power);
   if (book) return book;
   switch (state.phase) {
-    case 'tech': return { kind: 'endPhase' };
+    case 'tech': return techRoll(state, power);
     case 'purchase': return purchase(state, power);
     case 'combatMove': return combatMove(state, power) ?? { kind: 'endPhase' };
     case 'combat': return combatPhase(state, power);
@@ -240,6 +241,18 @@ function myTransportCount(state: GameState, p: Power): number {
     n += ts.units.filter((u) => u.owner === p && u.type === 'transport').length;
   }
   return n;
+}
+
+// --- weapons development (spec §8) ---
+// Spend SURPLUS cash on research until every tech is owned — never bank IPC you
+// could be turning into permanent upgrades (player insight). Reserve enough for a
+// normal unit buy first, so this only consumes cash that would otherwise pile up;
+// cap dice per turn so we don't dump a huge bank into one wasteful roll.
+function techRoll(state: GameState, p: Power): Action {
+  if (state.techs[p].length >= 6 || capitalHeldByEnemy(state, p)) return { kind: 'endPhase' };
+  const RESERVE = 80; // keep a full unit buy; only a genuine hoard funds research
+  const dice = Math.min(Math.floor((state.ipcs[p] - RESERVE) / 5), 10);
+  return dice >= 1 ? { kind: 'rollTech', dice } : { kind: 'endPhase' };
 }
 
 // --- purchase (spec §9.1) ---
