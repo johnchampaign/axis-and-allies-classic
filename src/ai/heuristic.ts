@@ -164,6 +164,37 @@ function landDistance(from: string, to: string): number {
   return 99;
 }
 
+/** The nearest still-enemy-held enemy capital, by land distance from our own
+ * capital. The army's single breakthrough objective — concentrating everyone on
+ * one axis instead of spreading thin (the all-heuristic stalemate: 1000+ units
+ * smeared across the front, no stack ever big enough to crack a defended line). */
+function breakthroughCapital(state: GameState, p: Power): string | null {
+  let best: string | null = null;
+  let bestD = 99;
+  for (const q of TURN_ORDER) {
+    if (!isEnemy(q, p)) continue;
+    const c = CAPITAL_OF[q];
+    const owner = terr(state, c).owner;
+    if (owner === null || !isEnemy(owner, p)) continue; // already ours/liberated
+    const d = landDistance(CAPITAL_OF[p], c);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+/** Greedy step from `from` to the friendly land neighbour closest (by land
+ * distance) to `goal` — funnels marching units toward a single objective. */
+function stepTowardGoal(state: GameState, from: string, goal: string, p: Power): string | null {
+  let best: string | null = null;
+  let bestD = landDistance(from, goal);
+  for (const n of def(from).connections) {
+    if (def(n).water || state.neutrals.includes(n) || !isFriendlySpace(state, n, p)) continue;
+    const d = landDistance(n, goal);
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best;
+}
+
 /** Movable ground units in `t`, respecting the capital garrison floor. */
 function sparesIn(state: GameState, p: Power, t: string): Unit[] {
   const ts = terr(state, t);
@@ -729,10 +760,14 @@ function noncombat(state: GameState, p: Power): Action | null {
     }
     return null; // hold everything else
   }
-  // 3) march one idle, safe-area ground unit toward the nearest enemy frontier —
-  // or toward the embarkation coast when the war effort needs sealift (live
-  // report: Russia's army has to walk to Karelia to board for London)
+  // 3) march one idle, safe-area ground unit toward the front — concentrated on
+  // a single breakthrough objective (the nearest enemy capital) rather than each
+  // unit drifting to its own nearest enemy, which smears the army along the whole
+  // front and never masss a stack big enough to break a defended line. Or toward
+  // the embarkation coast when the war effort needs sealift (live report:
+  // Russia's army has to walk to Karelia to board for London).
   const seaOnlyCapital = sealiftCapital(state, p);
+  const objective = breakthroughCapital(state, p);
   for (const [t, ts] of Object.entries(state.territories)) {
     if (def(t).water) continue;
     const hasAdjacentEnemy = def(t).connections.some((n) =>
@@ -749,7 +784,9 @@ function noncombat(state: GameState, p: Power): Action | null {
       const embark = embarkCoast(state, p, t);
       if (embark && embark !== t) step = stepToward(state, t, embark, p);
     }
-    step = step ?? stepTowardEnemy(state, t, p);
+    // funnel toward the breakthrough capital; fall back to nearest-enemy when it
+    // is unreachable by land (greedy gradient finds no closer friendly neighbour)
+    step = step ?? (objective ? stepTowardGoal(state, t, objective, p) : null) ?? stepTowardEnemy(state, t, p);
     if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
   }
   return null;
