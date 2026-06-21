@@ -97,6 +97,19 @@ function defenseOf(state: GameState, t: string, vs: Power): number {
     .reduce((s, u) => s + Math.max(defVal(u), 0.5), 0); // count fodder slightly
 }
 
+/** Total combat power of a side (attack value of all its land/sea/air units) —
+ * a rough board-wide strength gauge used to decide when one side dominates and
+ * should press for a fast finish (a faster win is a stronger player). */
+function sideStrength(state: GameState, side: 'axis' | 'allies'): number {
+  let s = 0;
+  for (const ts of Object.values(state.territories)) {
+    for (const u of ts.units) {
+      if (SIDE_OF[u.owner] === side && isCombat(u)) s += Math.max(atkVal(u), 0.5);
+    }
+  }
+  return s;
+}
+
 /** The defensive leash only binds while enemy ground is anywhere near home —
  * once the neighborhood is clear (e.g. Germany is dead), Russia may roam. */
 function radiusActive(state: GameState, p: Power): boolean {
@@ -532,7 +545,15 @@ function combatMove(state: GameState, p: Power): Action | null {
   // to contest it rather than racing easy low-value grabs.
   const ally = SIDE_OF[p] === 'allies';
   const danger = ally && enemyIncome(state, p) >= ECON_WIN - 9;
-  const effMargin = danger ? prof.margin * 0.75 : prof.margin;
+  // Press a winning position: a faster win is a stronger player. When our side's
+  // total combat power dominates the enemy's, stop waiting for cautious 1.4:1
+  // odds — commit at near-even and close the game out instead of letting a won
+  // position drag (the round-cap stalemates are just nobody pressing the edge).
+  const myPow = sideStrength(state, SIDE_OF[p]);
+  const foePow = sideStrength(state, ally ? 'axis' : 'allies');
+  const dominance = foePow > 0 ? myPow / foePow : 99;
+  const pressFactor = dominance >= 2 ? 0.6 : dominance >= 1.5 ? 0.8 : 1;
+  const effMargin = Math.max(0.85, (danger ? prof.margin * 0.75 : prof.margin) * pressFactor);
   let best: {
     target: string; from: Map<string, Unit[]>;
     air: { unit: Unit; at: string }[]; ratio: number; score: number;
