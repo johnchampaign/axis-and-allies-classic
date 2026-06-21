@@ -1064,7 +1064,15 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           // margin check parks a fully-loaded invasion fleet next to Tokyo
           // forever (observed: 17 loaded transports idle → draw). Gated tightly
           // on enemyIncome so it never loosens commitment in a live economy.
-          const crippled = SIDE_OF[p] === 'allies' && enemyIncome(state, p) <= 12;
+          // Throw the waves when the enemy is economically crippled OR when our
+          // side simply dominates the board — a faster win is a stronger player,
+          // and a 2:1 side should be storming the last capital, not parking a
+          // loaded fleet beside it while Japan keeps a moderate income (the
+          // stalemate: forward factories + 15 transports, yet Tokyo never
+          // assaulted because income was just over the crippled line).
+          const dominant = SIDE_OF[p] === 'allies' &&
+            sideStrength(state, 'allies') >= 2 * sideStrength(state, 'axis');
+          const crippled = SIDE_OF[p] === 'allies' && (enemyIncome(state, p) <= 12 || dominant);
           const power = cargoAtk + committed + airStrength;
           // Crippled endgame: throw ANY real wave at the capital regardless of
           // odds. Allies can't combine fleets — each power assaults alone on its
