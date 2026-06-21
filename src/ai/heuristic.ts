@@ -392,7 +392,20 @@ function purchase(state: GameState, p: Power): Action {
   // live report: Russia banked 155 IPCs while Japan held London with 2 units.
   const seaOnlyCapital = sealiftCapital(state, p);
   if (seaPlaceable && ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital)) {
-    const target = Math.min(9, Math.max(prof.transports, seaOnlyCapital ? 3 : 0, Math.ceil(homePile / 5)));
+    // Scale sealift to the army that needs moving. When the only enemy left is
+    // sea-locked (e.g. just Japan, across the ocean), a huge idle land army is
+    // worthless until ferried — so build boats toward the WHOLE army's need, not
+    // just the capital pile (John's rule: always deploy resources, never let a
+    // 200-unit stack sit idle in West Europe). Diverting idle troops' cash to
+    // sealift is strictly good — they do nothing until they can reach the front.
+    let landUnits = 0;
+    for (const ts2 of Object.values(state.territories)) {
+      landUnits += ts2.units.filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && isCombat(u)).length;
+    }
+    const cap = seaOnlyCapital ? 15 : 9;
+    const target = Math.min(cap, Math.max(
+      prof.transports, seaOnlyCapital ? Math.ceil(landUnits / 8) : 0, Math.ceil(homePile / 5),
+    ));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
   }
   // a rich power plants forward complexes instead of ferrying everything from
@@ -409,9 +422,13 @@ function purchase(state: GameState, p: Power): Action {
     buy('aaGun', 1);
   }
   if (homePile > 35) {
-    // the capital is clogged: buy only what FORWARD factories can absorb this
-    // turn (game-log lesson: Russia ended a 36-round game with 161 units
-    // parked in Moscow — unlimited capital production buried its logistics)
+    // The capital is clogged: production is outrunning logistics. Don't keep
+    // stuffing the capital (game-log lesson: 161 units parked in Moscow), but
+    // NEVER bank the leftover either — idle IPC is pure waste (John's rule: always
+    // deploy resources). Buy what forward factories can absorb, then spend ALL
+    // remaining cash on TRANSPORTS, which are the real bottleneck — they drain the
+    // pile to the front. Only if landlocked (no transports buildable) fall through
+    // to more units, since a unit still beats banked cash.
     let forwardCapacity = 0;
     for (const t of state.turnStartFactories) {
       if (t === CAPITAL_OF[p]) continue;
@@ -425,6 +442,8 @@ function purchase(state: GameState, p: Power): Action {
     buy('armor', Math.min(armorCap, Math.floor((cash * armorShare) / UNITS.armor.cost)));
     const already = (order.armor ?? 0);
     buy('infantry', Math.max(0, forwardCapacity - already));
+    if (seaPlaceable) buy('transport', 99); // soak the surplus into sealift
+    if (cash >= UNITS.infantry.cost) buy('infantry', 99); // landlocked surplus → units, not bank
     if (Object.keys(order).length === 0) return { kind: 'endPhase' };
     return { kind: 'purchase', order };
   }
