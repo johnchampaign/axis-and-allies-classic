@@ -384,19 +384,22 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
       )}
 
       {mode === 'send' && (
-        <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
-          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={3} style={{ width: '100%' }}
-            placeholder="What went wrong?" />
-          <button disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Send'}</button>
-          <button onClick={() => { setMsg(''); setMode('closed'); }}>Cancel</button>
+        <Modal onClose={() => { setMsg(''); setMode('closed'); }}>
+          <h3 style={{ marginTop: 0 }}>Report a problem</h3>
+          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={4} style={{ width: '100%', boxSizing: 'border-box' }}
+            placeholder="What went wrong?" autoFocus />
+          <div style={{ textAlign: 'right', marginTop: 10 }}>
+            <button onClick={() => { setMsg(''); setMode('closed'); }}>Cancel</button>
+            <button disabled={sending} onClick={send} style={{ marginLeft: 8 }}>{sending ? 'Sending…' : 'Send'}</button>
+          </div>
           <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
             We read every report. Check “My reports” later to see our reply.
           </div>
-        </div>
+        </Modal>
       )}
 
       {mode === 'list' && (
-        <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
+        <Modal onClose={() => setMode('closed')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <b>My reports</b>
             <button style={link} onClick={() => setMode('closed')}>close</button>
@@ -418,7 +421,7 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
               )}
             </div>
           ))}
-        </div>
+        </Modal>
       )}
 
       {reply && (
@@ -446,4 +449,25 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
 
 function Center({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: '4rem', textAlign: 'center' }}>{children}</div>;
+}
+
+/** Centered modal overlay — matches the reply popup and sibling projects, so
+ * "Report a problem" / "My reports" open as dialogs rather than inline panels. */
+function Modal({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: '#26323f', borderRadius: 10, padding: 22, width: 460, maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto', color: '#e8e4d8' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }

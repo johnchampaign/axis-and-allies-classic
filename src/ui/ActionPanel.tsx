@@ -353,6 +353,27 @@ function MovePanel({
     return Math.max(0, move - u.movesUsed);
   };
 
+  // A plane in the noncombat phase must END on a legal landing spot, not just
+  // anywhere in range: a land territory friendly SINCE TURN START (engine
+  // movement.ts moveAir), or — fighters only — a friendly carrier with a spare
+  // deck slot. Without this the dropdown offered every in-range space, enemy
+  // capitals included (live report: a UK bomber was offered Germany to "land").
+  const airLandOk = (t: string, airUnits: Unit[]): boolean => {
+    const ts = view.territories[t];
+    if (!TERR[t].water) {
+      const friendly = ts.owner !== null && POWER_SIDE[ts.owner] === POWER_SIDE[you] &&
+        ts.units.every((u) => POWER_SIDE[u.owner] === POWER_SIDE[you]);
+      return friendly && view.turnStartFriendly.includes(t);
+    }
+    // sea: only an all-fighter group can land, and only on a friendly carrier
+    // with room (2 deck slots per carrier)
+    if (!airUnits.every((u) => u.type === 'fighter')) return false;
+    if (ts.units.some((u) => POWER_SIDE[u.owner] !== POWER_SIDE[you])) return false;
+    const carriers = ts.units.filter((u) => u.type === 'carrier' && POWER_SIDE[u.owner] === POWER_SIDE[you]).length;
+    const fighters = ts.units.filter((u) => u.type === 'fighter' && POWER_SIDE[u.owner] === POWER_SIDE[you]).length;
+    return carriers * 2 > fighters;
+  };
+
   const destOptions = useMemo(() => {
     if (!selected || chosen.length === 0) return [];
     // reachable set per domain (BFS over that domain's passable spaces),
@@ -379,6 +400,11 @@ function MovePanel({
         frontier = next;
       }
       seen.delete(selected);
+      // in noncombat, an air group must land legally — drop in-range spaces it
+      // could not actually set down on (enemy/just-captured land, full carriers)
+      if (d === 'air' && phase === 'noncombat') {
+        for (const t of [...seen.keys()]) if (!airLandOk(t, units)) seen.delete(t);
+      }
       if (combined === null) {
         combined = seen;
       } else {
