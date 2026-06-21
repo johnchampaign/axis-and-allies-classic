@@ -7,3 +7,5 @@ public/dev-assets/
 .env
 .env.*
 .dev.vars
+
+dummy-non-existing-folder/
