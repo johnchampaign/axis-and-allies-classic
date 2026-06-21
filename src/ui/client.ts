@@ -3,7 +3,15 @@
 import type { GameClientApi, MessagingClientApi } from 'digital-boardgame-framework/client';
 import type { Action, GameState } from '../engine/types';
 
-export function makeClient(gameId: string, token: string): GameClientApi<GameState, Action> {
+export type AaClient = GameClientApi<GameState, Action> & {
+  /** Revert the last deterministic action; resolves with the refreshed view and
+   *  whether a further undo is still available. */
+  undo: () => Promise<{ view: GameState; canUndo: boolean }>;
+  /** Peek whether an undo is currently available (to enable the button). */
+  peekUndo: () => Promise<boolean>;
+};
+
+export function makeClient(gameId: string, token: string): AaClient {
   const base = `/api/games/${encodeURIComponent(gameId)}`;
   const q = `?t=${encodeURIComponent(token)}`;
   async function j<T>(r: Response): Promise<T> {
@@ -35,6 +43,11 @@ export function makeClient(gameId: string, token: string): GameClientApi<GameSta
           message: `${submission.message}${reporterMark()}`,
         }),
       }).then((r) => j<{ reportId: string }>(r)),
+    undo: () =>
+      fetch(`${base}/undo${q}`, { method: 'POST' })
+        .then((r) => j<View & { canUndo: boolean }>(r))
+        .then((d) => ({ view: d.view, canUndo: d.canUndo })),
+    peekUndo: () => fetch(`${base}/undo${q}`).then((r) => j<{ canUndo: boolean }>(r)).then((d) => d.canUndo),
   };
 }
 

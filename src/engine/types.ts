@@ -125,6 +125,11 @@ export interface GameState {
   log: string[];
   /** Powers played by the server AI (random legal moves). Set at game creation. */
   ai?: Power[];
+  /** Monotonic action counter (one per successfully applied action). Lets the
+   *  undo feature identify the previous game position unambiguously under the
+   *  append-only snapshot store. Optional/self-healing: snapshots without it
+   *  count from 0 on their next action. */
+  seq?: number;
 }
 
 export type Action =

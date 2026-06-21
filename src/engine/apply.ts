@@ -22,6 +22,7 @@ export function applyActionWithResult(
   }
 
   const result = dispatch(state, action, actor);
+  if (result.ok) state.seq = (prev.seq ?? 0) + 1; // action counter for undo
   return result.ok ? { state, result } : { state: prev, result };
 }
 

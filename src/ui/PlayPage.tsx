@@ -31,6 +31,15 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   );
   const useArt = artLoaded && boardStyle === 'art';
 
+  // Undo availability: peek whenever it becomes (or might still be) our turn.
+  const [canUndo, setCanUndo] = useState(false);
+  useEffect(() => {
+    if (!game.yourTurn) { setCanUndo(false); return; }
+    let cancelled = false;
+    client.peekUndo().then((v) => { if (!cancelled) setCanUndo(v); }).catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [client, game.turn, game.yourTurn]);
+
   const view = game.view;
   if (game.error && !view) return <Center>Failed to load: {String(game.error)}</Center>;
   if (!view) return <Center>Loading…</Center>;
@@ -39,6 +48,15 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   const clickTerritory = (tid: string) => {
     setSelected(tid === selected ? null : tid);
     setSelectedUnits([]);
+  };
+  const onUndo = async () => {
+    try {
+      const { canUndo: more } = await client.undo();
+      setCanUndo(more);
+      await game.refresh();
+      setSelected(null);
+      setSelectedUnits([]);
+    } catch { /* nothing to undo (raced with the opponent/AI) */ }
   };
   const myUnits: Unit[] = selected
     ? view.territories[selected].units.filter((u) => u.owner === you)
@@ -124,6 +142,8 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           selected={selected}
           selectedUnits={selectedUnits}
           clearSelection={() => { setSelectedUnits([]); }}
+          canUndo={canUndo}
+          onUndo={onUndo}
         />
         <ReportsWidget reportBug={game.reportBug} />
         <div style={{ marginTop: 10 }}>

@@ -112,7 +112,7 @@ const POWER_SIDE: Record<Power, 'axis' | 'allies'> = {
 };
 
 export function ActionPanel({
-  view, you, yourTurn, legal, submit, selected, selectedUnits, clearSelection,
+  view, you, yourTurn, legal, submit, selected, selectedUnits, clearSelection, canUndo, onUndo,
 }: {
   view: GameState;
   you: Power;
@@ -122,6 +122,8 @@ export function ActionPanel({
   selected: string | null;
   selectedUnits: number[];
   clearSelection: () => void;
+  canUndo: boolean;
+  onUndo: () => Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,6 +166,16 @@ export function ActionPanel({
   return (
     <div>
       {error && <div style={{ ...box, background: '#5d2f2f' }}>⚠ {error}</div>}
+      {canUndo && (
+        <button
+          style={{ ...btn, marginBottom: 6 }}
+          disabled={busy}
+          title="Take back your last action. Available until you roll dice (combat, tech, rockets) or end your turn."
+          onClick={async () => { setBusy(true); try { await onUndo(); } finally { setBusy(false); } }}
+        >
+          ↶ Undo last action
+        </button>
+      )}
       {view.phase === 'tech' && <TechPanel view={view} you={you} act={act} />}
       {view.phase === 'purchase' && <PurchasePanel view={view} you={you} act={act} />}
       {(view.phase === 'combatMove' || view.phase === 'noncombat') && (
