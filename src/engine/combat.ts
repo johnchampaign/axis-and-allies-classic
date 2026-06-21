@@ -16,6 +16,26 @@ const isAir = (u: Unit) => UNITS[u.type].domain === 'air';
 const isCombatUnit = (u: Unit) => u.type !== 'factory' && u.type !== 'aaGun';
 
 function battleTs(state: GameState) { return terr(state, state.battle!.territory); }
+
+/** Plain-language casualty line so players can see exactly what they lost each
+ * round (live report: "where did my bombers go?" — the summary log never said).
+ * Groups by owner so an allied stack reads "uk loses 1 bomber; russia loses 2
+ * infantry". */
+function logLosses(state: GameState, units: Unit[]): void {
+  if (units.length === 0) return;
+  const byOwner = new Map<Power, Map<string, number>>();
+  for (const u of units) {
+    if (!byOwner.has(u.owner)) byOwner.set(u.owner, new Map());
+    const m = byOwner.get(u.owner)!;
+    m.set(u.type, (m.get(u.type) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  for (const [owner, m] of byOwner) {
+    const items = [...m].map(([type, n]) => `${n} ${type}`).join(', '); // "2 infantry" — types read fine uncounted
+    parts.push(`${owner} loses ${items}`);
+  }
+  log(state, `  ${parts.join('; ')}.`);
+}
 /** Combatant filter: in naval battles, land units present are transport cargo —
  * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
 function fights(state: GameState, u: Unit): boolean {
@@ -136,11 +156,14 @@ function runRound(state: GameState): void {
       if (hits) log(state, `AA fire: ${hits} attacking plane(s) downed.`);
       // attacker chooses (spec §13.11); auto-rule: cheapest first
       const order = [...planes].sort((x, y) => UNITS[x.type].cost - UNITS[y.type].cost);
+      const downed: Unit[] = [];
       for (const v of order) {
         if (hits <= 0) break;
         ts.units.splice(ts.units.indexOf(v), 1);
+        downed.push(v);
         hits--;
       }
+      logLosses(state, downed);
     }
   }
 
@@ -172,12 +195,17 @@ function runRound(state: GameState): void {
 
   // Attacker regular fire (subs already fired; transports & AA roll nothing)
   let atkHits = 0;
+  let atkDice = 0;
   for (const u of attackers(state)) {
     if (u.type === 'submarine' && water) continue;
     const val = UNITS[u.type].attack;
     if (val <= 0) continue;
     const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
+    atkDice += dice;
     atkHits += rollDice(state, dice).filter((r) => r <= val).length;
+  }
+  if (atkDice > 0) {
+    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkDice} dice, ${atkHits} hit(s).`);
   }
   if (atkHits > 0) {
     const eligible = defenders(state).map((u) => u.id);
@@ -244,14 +272,17 @@ function applyCasualtyChoice(state: GameState, ids: number[]): void {
   const b = state.battle!;
   const ph = b.pendingHits.shift()!;
   const ts = battleTs(state);
+  const killed: Unit[] = [];
   for (const id of ids) {
     const u = ts.units.find((x) => x.id === id)!;
     if (ph.side === 'defender' && ph.firesBack) {
       b.defenderCasualties.push(id); // fires back this round, removed after (spec §6.2)
     } else {
       killUnit(state, ts, u);
+      killed.push(u);
     }
   }
+  logLosses(state, killed); // defender firesBack losses are logged when removed (endOfRound)
 }
 
 function killUnit(state: GameState, ts: { units: Unit[] }, u: Unit): void {
@@ -272,14 +303,20 @@ function afterCasualties(state: GameState): void {
   const firing = defenders(state); // includes defenderCasualties (still on board)
   let normalHits = 0;
   let subHits = 0;
+  let defDice = 0;
   for (const u of firing) {
     let val = UNITS[u.type].defense;
     if (u.type === 'fighter' && state.techs[u.owner].includes('jetPower')) val = 5;
     if (val <= 0) continue;
     const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
+    defDice += dice;
     const hits = rollDice(state, dice).filter((r) => r <= val).length;
     if (u.type === 'submarine') subHits += hits;
     else normalHits += hits;
+  }
+  if (defDice > 0) {
+    const who = [...new Set(firing.map((u) => u.owner))].join('/');
+    log(state, `Round ${b.round}: ${who} defends — ${defDice} dice, ${subHits + normalHits} hit(s).`);
   }
 
   // sub hits cannot kill planes (spec §6.3); attacker's hit units are removed
@@ -296,10 +333,12 @@ function endOfRound(state: GameState): void {
   const b = state.battle!;
   const ts = battleTs(state);
   // remove defender casualties (spec §6.2 step 5)
+  const removed: Unit[] = [];
   for (const id of b.defenderCasualties) {
     const u = ts.units.find((x) => x.id === id);
-    if (u) killUnit(state, ts, u);
+    if (u) { killUnit(state, ts, u); removed.push(u); }
   }
+  logLosses(state, removed);
   b.defenderCasualties = [];
 
   if (attackers(state).length === 0 || defenders(state).length === 0) {
