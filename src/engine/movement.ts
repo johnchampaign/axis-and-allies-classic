@@ -230,9 +230,23 @@ function moveAir(
     }
     const landOk = !def(dest).water && state.turnStartFriendly.includes(dest) &&
       isFriendlySpace(state, dest, actor);
+    // A sea-zone landing is only real if a friendly carrier with spare deck
+    // space is already there: each carrier seats 2 fighters (spec §4.3). Without
+    // this, the engine let fighters "land" in any empty ocean and they silently
+    // died at end of round — exactly the kind of spot players asked us to stop
+    // offering. The carrier must be present *now* (move it in first, as in real
+    // play); legalActions applies the identical test.
+    const present = def(dest).water ? terr(state, dest).units : [];
+    const deckSpace =
+      present.filter((x) => x.type === 'carrier' && !isEnemy(x.owner, actor)).length * 2 -
+      present.filter((x) => x.type === 'fighter' && !isEnemy(x.owner, actor)).length;
     const carrierOk = def(dest).water && !isEnemyOccupied(state, dest, actor) &&
-      units.every((u) => u.type === 'fighter');
-    if (!landOk && !carrierOk) return no('air must land in a territory friendly since turn start (or fighters on a carrier)');
+      units.every((u) => u.type === 'fighter') && deckSpace >= units.length;
+    if (!landOk && !carrierOk) {
+      return def(dest).water
+        ? no('fighters can only end at sea on a friendly carrier that has room — no carrier with space is there')
+        : no('air must land in a territory friendly since turn start (or fighters on a carrier)');
+    }
   }
 
   // neutral violation by overflight (combat movement only; spec §10)
