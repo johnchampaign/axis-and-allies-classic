@@ -406,6 +406,35 @@ function purchase(state: GameState, p: Power): Action {
 
 // --- combat movement ---
 function combatMove(state: GameState, p: Power): Action | null {
+  // 0.0) reclaim our OWN captured capital before anything else — it is
+  // existential: a power earns nothing while its capital is enemy-held, and (for
+  // the Axis) it is half the enemy's military-victory condition. Commit the
+  // adjacent land force at near-even odds, AHEAD of transport shuffling and rear
+  // walkovers, so nearby units mass on the capital instead of wandering off
+  // (uploaded game hhztzo: a fallen Berlin was never counter-attacked while
+  // West US/Mexico/Panama churned for 15 rounds). A sea-locked capital with no
+  // adjacent land force falls through to the transport/sealift path below.
+  const myCap = CAPITAL_OF[p];
+  const capTs = terr(state, myCap);
+  if (capTs.owner !== null && capTs.owner !== p && isEnemy(capTs.owner, p)) {
+    const defense = defenseOf(state, myCap, p);
+    const committed = capTs.units.filter((u) => u.owner === p && isCombat(u))
+      .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+    const from = new Map<string, Unit[]>();
+    let reinf = 0;
+    for (const n of def(myCap).connections) {
+      if (def(n).water) continue;
+      const units = sparesIn(state, p, n);
+      if (units.length > 0) { from.set(n, units); reinf += units.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0); }
+    }
+    const air = airSupport(state, p, myCap);
+    const airStr = air.reduce((s, a) => s + atkVal(a.unit), 0);
+    const ratio = defense > 0 ? (committed + reinf + airStr) / defense : 99;
+    if (from.size > 0 && ratio >= 0.9) {
+      const next = [...from.entries()][0];
+      return { kind: 'move', unitIds: next[1].map((u) => u.id), path: [next[0], myCap] };
+    }
+  }
   // 0) transports: assault, sail toward a beach, or pick up troops
   const tp = transportPlay(state, p, 'combatMove');
   if (tp) return tp;
@@ -483,10 +512,18 @@ function combatMove(state: GameState, p: Power): Action | null {
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
     if (from.size === 0 && (committed === 0 || air.length === 0)) continue; // nothing to send
     const ratio = (committed + reinforcements + airStrength) / defense;
+    // Retaking your OWN captured capital is existential and trumps everything:
+    // while an enemy holds it you earn nothing and (for the Axis) it is half the
+    // enemy's military-victory condition. Worth a near-even gamble, and ranked
+    // above any other target — without this AI Germany ignored a fallen Berlin
+    // and scattered into pointless rear raids (uploaded game hhztzo: Berlin
+    // never once counter-attacked while West US/Mexico/Panama churned for rounds).
+    const reclaim = target === CAPITAL_OF[p];
+    const tgtMargin = reclaim ? Math.min(effMargin, 0.9) : effMargin;
     // rank favorable attacks by odds plus (for Allies) the income/capital value
     // taken — so they go for the territory that hurts the Axis economy most
-    const score = ratio + (ally ? 0.1 * strategicValue(state, target, p) : 0);
-    if (ratio >= effMargin && (!best || score > best.score)) best = { target, from, air, ratio, score };
+    const score = ratio + (ally ? 0.1 * strategicValue(state, target, p) : 0) + (reclaim ? 100 : 0);
+    if (ratio >= tgtMargin && (!best || score > best.score)) best = { target, from, air, ratio, score };
   }
   if (best) {
     // ground waves first; once the ground is in, fly the air support
