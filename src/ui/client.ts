@@ -26,10 +26,58 @@ export function makeClient(gameId: string, token: string): GameClientApi<GameSta
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // tag every report so triage can filter ours out of the shared
-        // dbf_reports table: /api/reports?category=axis-allies
-        body: JSON.stringify({ category: 'axis-allies', ...submission }),
+        // dbf_reports table: /api/reports?category=axis-allies. We also stamp a
+        // per-browser reporter marker onto the message so the player's "My
+        // reports" panel can find the replies to reports they filed.
+        body: JSON.stringify({
+          category: 'axis-allies',
+          ...submission,
+          message: `${submission.message}${reporterMark()}`,
+        }),
       }).then((r) => j<{ reportId: string }>(r)),
   };
+}
+
+// --- Reporter identity + "My reports" -------------------------------------
+// Classic has no accounts, so a report has no owner the server can key on.
+// Instead we mint a random id per browser, persist it in localStorage, and
+// append it as an HTML comment to each report message. Triage (and the in-app
+// "My reports" panel) match on that marker to pair a reply with its reporter.
+const REPORTER_KEY = 'aa-reporter-id';
+
+export function reporterId(): string {
+  let id = localStorage.getItem(REPORTER_KEY);
+  if (!id) {
+    id = 'r-' + (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
+    localStorage.setItem(REPORTER_KEY, id);
+  }
+  return id;
+}
+
+const reporterMarker = (id: string) => `<!-- reporter:${id} -->`;
+const reporterMark = () => `\n\n${reporterMarker(reporterId())}`;
+
+/** Strip the trailing reporter marker so the player sees only what they typed. */
+export function stripReporterMarker(message: string): string {
+  return message.replace(/\s*<!--\s*reporter:[^>]*-->\s*$/, '').trimEnd();
+}
+
+export type MyReport = {
+  reportId: string;
+  severity?: string;
+  category?: string;
+  message: string;
+  createdAt?: string;
+  resolution?: { at: string; note: string };
+};
+
+/** Reports this browser filed (matched by reporter marker), newest first. */
+export async function listMyReports(): Promise<MyReport[]> {
+  const marker = reporterMarker(reporterId());
+  const rows = (await fetch('/api/reports?category=axis-allies').then((r) => r.json())) as MyReport[];
+  return rows
+    .filter((r) => typeof r.message === 'string' && r.message.includes(marker))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
 }
 
 export function makeChatClient(gameId: string, token: string): MessagingClientApi {

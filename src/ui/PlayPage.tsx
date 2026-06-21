@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGame, ChatPanel, UpdateBanner } from 'digital-boardgame-framework/client';
 import type { Action, GameState, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
@@ -7,7 +7,7 @@ import { AiTurnSummary } from './AiTurnSummary';
 import { ArtBoard } from './ArtBoard';
 import { useArtLoaded } from './artCache';
 import { Board } from './Board';
-import { makeChatClient, makeClient, savedTokens } from './client';
+import { listMyReports, makeChatClient, makeClient, savedTokens, stripReporterMarker, type MyReport } from './client';
 import { HoverPanel } from './HoverPanel';
 import { LoadArtModal } from './LoadArtModal';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
@@ -125,7 +125,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           selectedUnits={selectedUnits}
           clearSelection={() => { setSelectedUnits([]); }}
         />
-        <ReportButton report={(msg) => game.reportBug(msg, 'bug')} />
+        <ReportsWidget reportBug={game.reportBug} />
         <div style={{ marginTop: 10 }}>
           <ChatPanel client={chatClient} you={you} seatLabel={(s) => POWER_NAME[s as Power] ?? s} />
         </div>
@@ -314,20 +314,133 @@ function Log({ view }: { view: GameState }) {
   );
 }
 
-function ReportButton({ report }: { report: (msg: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** Report a problem + see replies. Reports are stored server-side and triaged
+ * out of band; when a report you filed is resolved, the reply surfaces here as
+ * a modal (and stays in the "My reports" list). Reporter identity is a
+ * per-browser marker — see client.ts. */
+const SEEN_REPLIES_KEY = 'aa-seen-report-replies';
+function loadSeen(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_REPLIES_KEY) ?? '[]')); }
+  catch { return new Set(); }
+}
+function markSeen(ids: string[]): void {
+  const all = loadSeen();
+  for (const id of ids) all.add(id);
+  localStorage.setItem(SEEN_REPLIES_KEY, JSON.stringify([...all]));
+}
+
+function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug' | 'rules-question' | 'feedback') => Promise<string> }) {
+  const [mode, setMode] = useState<'closed' | 'send' | 'list'>('closed');
   const [msg, setMsg] = useState('');
-  if (!open) {
-    return <button style={{ marginTop: 8, background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
-      onClick={() => setOpen(true)}>Report a problem…</button>;
-  }
+  const [sending, setSending] = useState(false);
+  const [reports, setReports] = useState<MyReport[] | null>(null);
+  const [reply, setReply] = useState<MyReport | null>(null); // unseen resolution to surface
+
+  const refresh = () =>
+    listMyReports().then(setReports).catch(() => { /* offline / endpoint down: stay quiet */ });
+
+  // On mount, pull this browser's reports and pop a modal for the first reply
+  // we haven't shown yet. Only runs if this browser has ever filed a report.
+  useEffect(() => {
+    if (!localStorage.getItem('aa-reporter-id')) return;
+    listMyReports().then((rows) => {
+      setReports(rows);
+      const seen = loadSeen();
+      const fresh = rows.find((r) => r.resolution && !seen.has(r.reportId));
+      if (fresh) setReply(fresh);
+    }).catch(() => { /* ignore */ });
+  }, []);
+
+  const send = async () => {
+    if (!msg.trim() || sending) return;
+    setSending(true);
+    try {
+      await reportBug(msg.trim(), 'bug');
+      setMsg('');
+      setMode('closed');
+      await refresh();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const dismissReply = () => {
+    if (reply) markSeen([reply.reportId]);
+    setReply(null);
+  };
+
+  const repliedCount = (reports ?? []).filter((r) => r.resolution).length;
+  const link: React.CSSProperties = { background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' };
+
   return (
-    <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
-      <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={3} style={{ width: '100%' }}
-        placeholder="What went wrong?" />
-      <button onClick={() => { if (msg.trim()) { report(msg); setMsg(''); setOpen(false); } }}>Send</button>
-      <button onClick={() => setOpen(false)}>Cancel</button>
-    </div>
+    <>
+      {mode === 'closed' && (
+        <div style={{ marginTop: 8 }}>
+          <button style={link} onClick={() => setMode('send')}>Report a problem…</button>
+          <button style={{ ...link, marginLeft: 12 }} onClick={() => { setMode('list'); refresh(); }}>
+            My reports{repliedCount > 0 ? ` (${repliedCount} replied)` : ''}
+          </button>
+        </div>
+      )}
+
+      {mode === 'send' && (
+        <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
+          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={3} style={{ width: '100%' }}
+            placeholder="What went wrong?" />
+          <button disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Send'}</button>
+          <button onClick={() => { setMsg(''); setMode('closed'); }}>Cancel</button>
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+            We read every report. Check “My reports” later to see our reply.
+          </div>
+        </div>
+      )}
+
+      {mode === 'list' && (
+        <div style={{ background: '#26323f', borderRadius: 8, padding: 10, marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <b>My reports</b>
+            <button style={link} onClick={() => setMode('closed')}>close</button>
+          </div>
+          {reports === null && <div style={{ opacity: 0.6 }}>Loading…</div>}
+          {reports !== null && reports.length === 0 && (
+            <div style={{ opacity: 0.6 }}>You haven’t filed any reports yet.</div>
+          )}
+          {(reports ?? []).map((r) => (
+            <div key={r.reportId} style={{ borderTop: '1px solid #34465a', padding: '8px 0' }}>
+              <div style={{ fontSize: 13 }}>{stripReporterMarker(r.message)}</div>
+              {r.resolution ? (
+                <div style={{ marginTop: 6, background: '#1d2a36', borderLeft: '3px solid #5a8', borderRadius: 4, padding: '6px 8px' }}>
+                  <div style={{ fontSize: 11, color: '#7c9', marginBottom: 2 }}>Reply from the team</div>
+                  <div style={{ fontSize: 13 }}>{r.resolution.note}</div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>⏳ Pending — we haven’t replied yet.</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reply && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{ background: '#26323f', borderRadius: 10, padding: 22, maxWidth: 460, color: '#e8e4d8' }}>
+            <h3 style={{ marginTop: 0 }}>We replied to your report 📨</h3>
+            <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>
+              You reported: “{stripReporterMarker(reply.message)}”
+            </div>
+            <div style={{ background: '#1d2a36', borderLeft: '3px solid #5a8', borderRadius: 4, padding: '10px 12px' }}>
+              {reply.resolution?.note}
+            </div>
+            <div style={{ textAlign: 'right', marginTop: 14 }}>
+              <button style={{ padding: '8px 14px', cursor: 'pointer' }} onClick={dismissReply}>Thanks!</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
