@@ -65,6 +65,12 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
       supabaseUrl: env.SUPABASE_URL!,
       serviceKey: env.SUPABASE_SERVICE_ROLE_KEY!,
     }),
+    // Best-effort games-played counter (framework v0.11). createGame fires one
+    // beacon per game start. NOTE: A&A routes EVERY game — online, hotseat, and
+    // vs-AI — through this server (no local-only path; CLAUDE.md), so this single
+    // beacon already counts them all. We deliberately do NOT also call
+    // recordPlay() client-side for hotseat/AI, which would double-count.
+    playBeacon: { appId: 'axis-and-allies' },
     gameUrl: (gameId, token) =>
       `${base}/?g=${encodeURIComponent(gameId)}&t=${encodeURIComponent(token)}`,
   });

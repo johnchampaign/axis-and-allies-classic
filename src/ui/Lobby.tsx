@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Power } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { saveTokens } from './client';
@@ -10,6 +10,17 @@ export function Lobby() {
   const [error, setError] = useState<string | null>(null);
   const [aiPowers, setAiPowers] = useState<Power[]>([]);
   const [emails, setEmails] = useState<Partial<Record<Power, string>>>({});
+  const [plays, setPlays] = useState<number | null>(null);
+
+  // Best-effort games-played counter from the shared hub (framework v0.11).
+  useEffect(() => {
+    let cancelled = false;
+    fetch('https://games-hub-5vo.pages.dev/stats?game=axis-and-allies')
+      .then((r) => r.json() as Promise<{ count?: number }>)
+      .then((d) => { if (!cancelled && typeof d.count === 'number') setPlays(d.count); })
+      .catch(() => { /* a counter must never break the lobby */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const create = async () => {
     setCreating(true);
@@ -44,6 +55,9 @@ export function Lobby() {
   return (
     <div style={{ maxWidth: 640, margin: '4rem auto', padding: 16 }}>
       <h1>Axis &amp; Allies Classic</h1>
+      {plays !== null && (
+        <p style={{ color: '#8ab', fontSize: 13, marginTop: -8 }}>{plays.toLocaleString()} games played</p>
+      )}
       <p>Online async, 2–5 players. One seat per power; share each invite link with whoever plays that power (one player may hold several). Hotseat: just open the game yourself — this browser keeps all five seats.</p>
       {!result && (
         <div>
