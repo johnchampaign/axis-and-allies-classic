@@ -475,6 +475,14 @@ function MovePanel({
     ? view.territories[selected].units.filter((u) => u.type === 'transport' && u.owner === you && u.cargo.length > 0)
     : [];
 
+  // a coastal land territory whose chosen land units have nowhere to load is the
+  // #1 source of "how do I put infantry on a transport?" confusion — sea zones
+  // never appear in the move dropdown (land can't enter water on its own), so
+  // without a hint the player is simply stuck (reported turns 89/163).
+  const coastalLand = !!selected && !TERR[selected].water &&
+    TERR[selected].connections.some((z) => TERR[z].water);
+  const haveLandChosen = chosen.some((u) => ['infantry', 'armor', 'aaGun'].includes(u.type));
+
   return (
     <div style={box}>
       <b>{phase === 'combatMove' ? 'Combat movement' : 'Noncombat movement'}</b>
@@ -529,6 +537,14 @@ function MovePanel({
               )}
             </div>
           ))}
+          {coastalLand && haveLandChosen && loadPlans.length === 0 && (
+            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+              To put these on a transport, the transport must already be in the
+              adjacent sea zone and not have moved yet this turn — load before you
+              sail. (Land units can’t move into a sea zone on their own, so sea
+              zones don’t show up in the destination list.)
+            </div>
+          )}
           {transports.length > 1 && (
             <div style={{ borderBottom: '1px solid #456', paddingBottom: 6, marginBottom: 6 }}>
               <b>Unload ALL {transports.length} transports</b> ({transports.reduce((s, t) => s + t.cargo.length, 0)} units) to:
