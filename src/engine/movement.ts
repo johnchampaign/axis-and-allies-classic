@@ -152,12 +152,40 @@ function moveSea(
     if (u.movedPhase) return no('ship already moved this turn');
     if (UNITS[u.type].domain !== 'sea') return no('not a ship');
   }
+  const fromTs = terr(state, a.path[0]);
   // carried fighters ride a carrier; cargo rides transports — validate capacity
   const carriers = units.filter((u) => u.type === 'carrier');
-  const fighters = carried.filter((u) => u.type === 'fighter' && u.owner === actor);
-  if (carried.length !== fighters.length) return no('carriers carry only your fighters');
-  if (fighters.length > carriers.length * 2) return no('carrier capacity exceeded');
-  if (fighters.some((f) => f.movedPhase || f.fought)) return no('carried fighter already moved');
+  const cap = carriers.length * 2;
+  if (carried.some((u) => u.type !== 'fighter')) return no('carriers carry only fighters');
+  if (carried.some((u) => isEnemy(u.owner, actor))) return no('cannot carry enemy fighters');
+  // In a COMBAT move only your own fighters ride: an ally's fighters joining a
+  // naval battle under your command would raise ownership/casualty questions
+  // (spec §6.2 casualty consent). Allied carrying is for repositioning only.
+  if (phase === 'combatMove' && carried.some((f) => f.owner !== actor)) {
+    return no('carriers carry only your fighters into combat');
+  }
+  // Your OWN carried fighters are making their move now → they must be free to.
+  if (carried.some((f) => f.owner === actor && (f.movedPhase || f.fought))) {
+    return no('carried fighter already moved');
+  }
+  const fighters: Unit[] = [...carried];
+  // Auto-carry stranded passengers (noncombat repositioning): a fighter cannot
+  // sit alone at sea, so any same-side fighter in the origin that the carriers
+  // STAYING behind can no longer hold must ride along — otherwise moving an
+  // ally's carrier orphans their fighters and the end-of-turn cleanup destroys
+  // them (the reported gap: "US fighters go not with UK carrier, but destroyed").
+  if (phase === 'noncombat') {
+    const sameSideFigs = fromTs.units.filter((u) => u.type === 'fighter' && !isEnemy(u.owner, actor));
+    const stayingCap = fromTs.units.filter((u) => u.type === 'carrier' && !units.includes(u)).length * 2;
+    let originLeft = sameSideFigs.length - fighters.length;
+    for (const f of sameSideFigs) {
+      if (originLeft <= stayingCap || fighters.length >= cap) break;
+      if (fighters.includes(f)) continue;
+      fighters.push(f);
+      originLeft--;
+    }
+  }
+  if (fighters.length > cap) return no('carrier capacity exceeded');
 
   // canal + passage checks per step
   for (let i = 0; i < a.path.length - 1; i++) {
@@ -168,7 +196,6 @@ function moveSea(
   const destHostile = isEnemyOccupied(state, dest, actor);
   if (phase === 'noncombat' && destHostile) return no('noncombat moves cannot enter enemy-occupied zones');
 
-  const fromTs = terr(state, a.path[0]);
   const destTs = terr(state, dest);
   // cargo travels with its transport (spec §5.2)
   const cargo: Unit[] = [];
@@ -188,8 +215,9 @@ function moveSea(
     if (phase === 'combatMove' && !u.origin) u.origin = a.path[0];
     if (destHostile && phase === 'combatMove') u.fought = true;
   }
-  // carried fighters spend no range and may still act later? No — riding is their move (spec §4.3 carrier rules).
-  for (const f of fighters) f.movedPhase = phase;
+  // Your own carried fighters spend their move riding (spec §4.3); allied
+  // passengers keep their own turn's flags (reset on their turn, not ours).
+  for (const f of fighters) if (f.owner === actor) f.movedPhase = phase;
   return ok;
 }
 
