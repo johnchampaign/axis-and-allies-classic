@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame, ChatPanel, UpdateBanner } from 'digital-boardgame-framework/client';
 import type { Action, GameState, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
@@ -39,6 +39,19 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
     client.peekUndo().then((v) => { if (!cancelled) setCanUndo(v); }).catch(() => { /* ignore */ });
     return () => { cancelled = true; };
   }, [client, game.turn, game.yourTurn]);
+
+  // Weapons-development roll result: pop an info dialog once when you make your
+  // tech attempt (live report: the dice/breakthrough only showed in the log).
+  const [techResult, setTechResult] = useState<string | null>(null);
+  const techShownTurn = useRef(-1);
+  useEffect(() => {
+    const v = game.view;
+    const me = game.you;
+    if (!v || !me || !v.techRolledThisTurn || v.current !== me) return;
+    if (techShownTurn.current === v.globalTurn) return;
+    const msg = parseTechRoll(v.log, me);
+    if (msg) { setTechResult(msg); techShownTurn.current = v.globalTurn; }
+  }, [game.view, game.you]);
 
   const view = game.view;
   if (game.error && !view) return <Center>Failed to load: {String(game.error)}</Center>;
@@ -119,6 +132,15 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           )}
         </div>
         {artModal && <LoadArtModal onClose={() => setArtModal(false)} />}
+        {techResult && (
+          <Modal onClose={() => setTechResult(null)}>
+            <h3 style={{ marginTop: 0 }}>Weapons development 🎲</h3>
+            <p style={{ fontSize: 14 }}>{techResult}</p>
+            <div style={{ textAlign: 'right' }}>
+              <button style={{ padding: '8px 14px', cursor: 'pointer' }} onClick={() => setTechResult(null)}>OK</button>
+            </div>
+          </Modal>
+        )}
         <AiTurnSummary gameId={gameId} view={view} />
         <GameOverDialog gameId={gameId} view={view} you={you} client={client} />
         {selected && (
@@ -469,6 +491,27 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
 
 function Center({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: '4rem', textAlign: 'center' }}>{children}</div>;
+}
+
+/** Summarize this turn's weapons-development roll from the log, for the info
+ *  dialog: the dice rolled and any breakthroughs developed. */
+function parseTechRoll(log: string[], you: string): string | null {
+  let i = -1;
+  for (let k = log.length - 1; k >= 0; k--) {
+    if (log[k].startsWith(`${you} buys `) && log[k].includes('research dice')) { i = k; break; }
+  }
+  if (i < 0) return null;
+  const rolls = log[i].match(/\[([^\]]*)\]/)?.[1] ?? '';
+  const pretty = (t: string) => t.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+  const devs: string[] = [];
+  for (let k = i + 1; k < log.length; k++) {
+    const m = log[k].match(new RegExp(`^${you} develops (.+)!$`));
+    if (!m) break;
+    devs.push(pretty(m[1]));
+  }
+  return devs.length
+    ? `You rolled [${rolls}] — breakthrough! Developed: ${devs.join(', ')}. (Each 6 is a breakthrough.)`
+    : `You rolled [${rolls}] — no breakthrough this time (you need a 6).`;
 }
 
 /** Centered modal overlay — matches the reply popup and sibling projects, so
