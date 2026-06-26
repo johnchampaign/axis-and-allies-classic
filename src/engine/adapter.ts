@@ -40,6 +40,9 @@ export const axisAndAlliesAdapter: GameAdapter<GameState, Action, Power> = {
     if (!state.winner) return null;
     return {
       winners: TURN_ORDER.filter((p) => SIDE_OF[p] === state.winner),
+      // Team game: each power → its side, so ratings don't pit Axis (or Allied)
+      // teammates against each other — only across the Axis/Allies divide.
+      teams: Object.fromEntries(TURN_ORDER.map((p) => [p, SIDE_OF[p]])),
       reason: state.winReason ?? undefined,
     };
   },

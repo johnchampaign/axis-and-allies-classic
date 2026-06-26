@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useGame, ChatPanel, UpdateBanner } from 'digital-boardgame-framework/client';
+import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar } from 'digital-boardgame-framework/client';
+import type { RankedInfo } from 'digital-boardgame-framework/client';
 import type { Action, GameState, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { ActionPanel, tname } from './ActionPanel';
@@ -7,7 +8,7 @@ import { AiTurnSummary } from './AiTurnSummary';
 import { ArtBoard } from './ArtBoard';
 import { useArtLoaded } from './artCache';
 import { Board } from './Board';
-import { listMyReports, makeChatClient, makeClient, savedTokens, stripReporterMarker, type MyReport } from './client';
+import { claimSeat, listMyReports, makeChatClient, makeClient, savedTokens, stripReporterMarker, type MyReport } from './client';
 import { HoverPanel } from './HoverPanel';
 import { LoadArtModal } from './LoadArtModal';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
@@ -17,8 +18,17 @@ declare const __DBF_BUILD_ID__: string;
 export function PlayPage({ gameId, token: initialToken }: { gameId: string; token: string }) {
   const wallet = savedTokens(gameId); // hotseat: all tokens this browser holds
   const [token, setToken] = useState(initialToken);
-  const client = useMemo(() => makeClient(gameId, token), [gameId, token]);
+  // Ranked identity (anon or signed-in). Kept in a ref so each move carries it
+  // to the server (per-move attribution — robust + race-free).
+  const { identity } = useIdentity();
+  const idTokRef = useRef<string | undefined>(undefined);
+  idTokRef.current = identity?.token;
+  const client = useMemo(() => makeClient(gameId, token, () => idTokRef.current), [gameId, token]);
   const game = useGame<GameState, Action>(client, { pollMs: 4000 });
+  // Bind this seat's identity on join (covers a player who never gets a turn).
+  useEffect(() => {
+    if (identity?.token) void claimSeat(gameId, token, identity.token);
+  }, [gameId, token, identity?.token]);
   const chatClient = useMemo(() => makeChatClient(gameId, token), [gameId, token]);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedUnits, setSelectedUnits] = useState<number[]>([]);
@@ -76,6 +86,10 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
     : [];
 
   return (
+    <div>
+    <div style={{ padding: '0 12px' }}>
+      <SignInBar leaderboardHref="https://games-hub-5vo.pages.dev/leaderboard?game=axis-and-allies" />
+    </div>
     <div style={{ display: 'flex', gap: 12, padding: 12, alignItems: 'flex-start' }}>
       <UpdateBanner currentBuild={__DBF_BUILD_ID__} />
       <div style={{ flex: '1 1 65%', minWidth: 0 }}>
@@ -142,7 +156,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           </Modal>
         )}
         <AiTurnSummary gameId={gameId} view={view} />
-        <GameOverDialog gameId={gameId} view={view} you={you} client={client} />
+        <GameOverDialog gameId={gameId} view={view} you={you} client={client} ranked={game.ranked} />
         {selected && (
           <UnitPicker
             view={view}
@@ -174,15 +188,17 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
         <HoverPanel state={view} tid={hovered ?? selected} artActive={useArt} />
       </div>
     </div>
+    </div>
   );
 }
 
 /** End-of-game dialog: result + optional log upload (logs feed AI tuning). */
 function GameOverDialog({
-  gameId, view, you, client,
+  gameId, view, you, client, ranked,
 }: {
   gameId: string; view: GameState; you: Power;
   client: ReturnType<typeof makeClient>;
+  ranked: RankedInfo | null;
 }) {
   const dismissKey = `aa-gameover-seen:${gameId}`;
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(dismissKey) === '1');
@@ -217,6 +233,17 @@ function GameOverDialog({
           The <b>{view.winner === 'axis' ? 'Axis' : 'Allies'}</b> win — {view.winReason}.
           {youWon ? ' Well played!' : ' Better luck next time.'}
         </p>
+        {ranked && (
+          <p style={{ fontSize: 13, color: ranked.recorded ? '#9f9' : '#caa' }}>
+            {ranked.recorded
+              ? '✓ Recorded to the leaderboard.'
+              : ranked.reason === 'one-player'
+                ? 'Not ranked — both seats were the same player (you need two different people/identities).'
+                : ranked.reason === 'no-identities'
+                  ? 'Not ranked — no identities were attached to the seats.'
+                  : "Not ranked — couldn't reach the leaderboard."}
+          </p>
+        )}
         <p style={{ fontSize: 13, opacity: 0.85 }}>
           Uploading the game log helps improve the AI opponent — it shows us which
           strategies beat it (or how it beat you). The log contains only game moves,

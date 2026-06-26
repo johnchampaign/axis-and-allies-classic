@@ -4,6 +4,7 @@
 // The server barrel is Workers-safe in v0.8.x (FsStore lives in /server/node).
 import {
   GameServer, NoopNotifier, ResendNotifier, SupabaseBroadcaster, SupabaseStore,
+  verifyIdentityToken, type Jwks,
 } from 'digital-boardgame-framework/server';
 import { jsonCodec } from 'digital-boardgame-framework';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
@@ -22,9 +23,24 @@ export interface Env {
   RESEND_FROM?: string;
   /** Optional shared token gating /api/cron/sweep-reminders. */
   CRON_SECRET?: string;
+  /** Shared secret matching the hub's RATINGS_INGEST_KEY (enables ranked play). */
+  RATINGS_INGEST_KEY?: string;
 }
 
 export type Server = GameServer<GameState, Action, Power>;
+
+// Ranked play: verify hub-issued identity tokens against the hub's JWKS, cached
+// for an hour across warm isolates.
+const HUB = 'https://games-hub-5vo.pages.dev';
+let _jwks: Jwks | undefined;
+let _jwksAt = 0;
+async function getJwks(): Promise<Jwks> {
+  if (!_jwks || Date.now() - _jwksAt > 3_600_000) {
+    _jwks = (await (await fetch(`${HUB}/id/jwks`)).json()) as Jwks;
+    _jwksAt = Date.now();
+  }
+  return _jwks;
+}
 
 let _supabase: SupabaseClient | null = null;
 
@@ -73,6 +89,11 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
     playBeacon: { appId: 'axis-and-allies' },
     gameUrl: (gameId, token) =>
       `${base}/?g=${encodeURIComponent(gameId)}&t=${encodeURIComponent(token)}`,
+    // Ranked play: verify hub identity tokens (claimSeat) + auto-report results.
+    verifyIdentity: async (t) => verifyIdentityToken(t, await getJwks()),
+    ...(env.RATINGS_INGEST_KEY
+      ? { ratings: { game: 'axis-and-allies', ingestKey: env.RATINGS_INGEST_KEY } }
+      : {}),
   });
 }
 

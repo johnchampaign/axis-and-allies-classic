@@ -8,10 +8,15 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   try {
     const { request, env, params } = ctx;
     const id = String(params.id);
-    const body = (await request.json().catch(() => null)) as { action?: Action } | null;
+    const body = (await request.json().catch(() => null)) as { action?: Action; identityToken?: string } | null;
     if (!body?.action) return json({ error: 'missing action' }, 400);
     const server = makeServer(request, env);
     const token = tokenOf(request);
+    // Ranked: attribute this seat from the move's identity (idempotent, race-free
+    // — turns are sequential). Best-effort; never blocks the move.
+    if (typeof body.identityToken === 'string' && body.identityToken) {
+      try { await server.claimSeat(id, token, body.identityToken); } catch { /* optional */ }
+    }
     let r = await server.submit(id, token, body.action);
     // if the move handed the decision to an AI power (its turn, or it must pick
     // casualties in a battle), play it now and return the post-AI view

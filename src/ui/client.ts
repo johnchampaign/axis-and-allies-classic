@@ -11,7 +11,9 @@ export type AaClient = GameClientApi<GameState, Action> & {
   peekUndo: () => Promise<boolean>;
 };
 
-export function makeClient(gameId: string, token: string): AaClient {
+export function makeClient(
+  gameId: string, token: string, getIdentityToken?: () => string | undefined,
+): AaClient {
   const base = `/api/games/${encodeURIComponent(gameId)}`;
   const q = `?t=${encodeURIComponent(token)}`;
   async function j<T>(r: Response): Promise<T> {
@@ -26,7 +28,8 @@ export function makeClient(gameId: string, token: string): AaClient {
       fetch(`${base}/submit${q}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        // ranked: carry the player's hub identity so the seat is attributed
+        body: JSON.stringify({ action, identityToken: getIdentityToken?.() }),
       }).then((r) => j<View>(r)),
     legalActions: () => fetch(`${base}/legal${q}`).then((r) => j<Action[]>(r)),
     report: (submission) =>
@@ -49,6 +52,18 @@ export function makeClient(gameId: string, token: string): AaClient {
         .then((d) => ({ view: d.view, canUndo: d.canUndo })),
     peekUndo: () => fetch(`${base}/undo${q}`).then((r) => j<{ canUndo: boolean }>(r)).then((d) => d.canUndo),
   };
+}
+
+/** Attach the player's hub identity to their seat (ranked). Best-effort —
+ *  per-move attribution in submit() is the primary path; this covers a player
+ *  who joins but never gets a turn before the game ends. */
+export async function claimSeat(gameId: string, token: string, identityToken: string): Promise<void> {
+  try {
+    await fetch(`/api/games/${encodeURIComponent(gameId)}/claim?t=${encodeURIComponent(token)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identityToken }),
+    });
+  } catch { /* ranked attribution is optional */ }
 }
 
 // --- Reporter identity + "My reports" -------------------------------------
