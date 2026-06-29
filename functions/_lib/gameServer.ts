@@ -88,6 +88,7 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
   const base = env.PUBLIC_BASE_URL || new URL(request.url).origin;
   const supabase = getSupabase(env);
   return new GameServer<GameState, Action, Power>({
+    snapshotHistory: 20,   // cap per-game snapshot history (framework >=0.32)
     adapter: axisAndAlliesAdapter,
     codec: jsonCodec<GameState>(),
     store: new SupabaseStore(supabase),
