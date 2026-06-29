@@ -62,6 +62,23 @@ export function makeStore(env: Env): SupabaseStore {
   return new SupabaseStore(getSupabase(env));
 }
 
+/** Most-recent snapshots for a game (newest first), bounded by `limit`. Undo
+ *  only walks back within the current turn, so it must NOT pull the full history
+ *  — store.getHistory() fetches every snapshot, which on a long game is tens of
+ *  MB and made the UI crawl / time out (live report). This caps the work. */
+export async function recentSnapshots(
+  env: Env, gameId: string, limit: number,
+): Promise<{ turn: number; state: string }[]> {
+  const { data, error } = await getSupabase(env)
+    .from('dbf_snapshots')
+    .select('turn,state')
+    .eq('game_id', gameId)
+    .order('turn', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({ turn: r.turn as number, state: r.state as string }));
+}
+
 function makeNotifier(env: Env) {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM) return new NoopNotifier();
   return new ResendNotifier({ apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM });

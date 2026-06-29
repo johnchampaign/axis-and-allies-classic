@@ -12,17 +12,21 @@
 // The snapshot store is append-only, so an undo RE-APPENDS the target state as a
 // new latest snapshot. state.seq (a monotonic action counter) identifies the
 // previous position unambiguously even after such re-appends.
-import { fail, json, makeServer, makeStore, tokenOf, type Env } from '../../../_lib/gameServer';
+import { fail, json, makeServer, makeStore, recentSnapshots, tokenOf, type Env } from '../../../_lib/gameServer';
 import { axisAndAlliesAdapter as adapter } from '../../../../src/engine/adapter';
 import type { GameState } from '../../../../src/engine/types';
 
 const decode = (s: string): GameState => JSON.parse(s.replace(/^v\d+:/, '')) as GameState;
 
+// Undo only walks back within the current turn (to the last dice roll), so a
+// bounded window of recent snapshots is always enough — never pull full history.
+const WINDOW = 60;
+
 type UndoTarget = { latestTurn: number; targetState: string };
 
 /** Find the snapshot to revert to, or null if undo is not currently allowed. */
-async function findUndo(store: ReturnType<typeof makeStore>, id: string, you: string): Promise<UndoTarget | null> {
-  const hist = (await store.getHistory(id)).slice().sort((a, b) => a.turn - b.turn);
+async function findUndo(env: Env, id: string, you: string): Promise<UndoTarget | null> {
+  const hist = (await recentSnapshots(env, id, WINDOW)).sort((a, b) => a.turn - b.turn);
   if (hist.length < 2) return null;
   const latest = hist[hist.length - 1];
   const cur = decode(latest.state);
@@ -45,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     const server = makeServer(request, env);
     const token = tokenOf(request);
     const { you } = await server.fetch(id, token); // authenticates the token → seat
-    const undo = await findUndo(makeStore(env), id, you);
+    const undo = await findUndo(env, id, you);
     return json({ canUndo: undo !== null });
   } catch (e) {
     return fail(e);
@@ -60,12 +64,12 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     const store = makeStore(env);
     const token = tokenOf(request);
     const { you } = await server.fetch(id, token);
-    const undo = await findUndo(store, id, you);
+    const undo = await findUndo(env, id, you);
     if (!undo) return json({ error: 'nothing to undo' }, 400);
     // re-append the prior state as the new latest snapshot (store is append-only)
     await store.putSnapshot(id, { turn: undo.latestTurn + 1, state: undo.targetState });
     const view = await server.fetch(id, token);
-    const next = await findUndo(store, id, you); // can we keep undoing?
+    const next = await findUndo(env, id, you); // can we keep undoing?
     return json({ ...view, canUndo: next !== null });
   } catch (e) {
     return fail(e);
