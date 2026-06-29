@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Lobby } from './Lobby';
 import { PlayPage } from './PlayPage';
+import { SplashScreen } from 'digital-boardgame-framework/client';
 
 // dev-only tools — lazy so they never ship in the normal play bundle
 const PolygonAudit = lazy(() =>
@@ -31,4 +32,4 @@ function App() {
   return <Lobby />;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(<><SplashScreen title="Axis & Allies Classic" appId="axis-and-allies" /><App /></>);
