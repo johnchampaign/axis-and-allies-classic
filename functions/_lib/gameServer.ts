@@ -9,6 +9,7 @@ import {
 import { jsonCodec } from 'digital-boardgame-framework';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { axisAndAlliesAdapter } from '../../src/engine/adapter';
+import { aiControllers } from '../../src/ai/controller';
 import type { Action, GameState, Power } from '../../src/engine/types';
 
 export interface Env {
@@ -90,6 +91,10 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
   return new GameServer<GameState, Action, Power>({
     snapshotHistory: 20,   // cap per-game snapshot history (framework >=0.32)
     adapter: axisAndAlliesAdapter,
+    // Server-driven AI seats (framework >=0.37). Online vs-AI games attribute AI
+    // powers the synthetic identity `ai:axis-and-allies:standard` and the server
+    // drives them on createGame/submit, so the AI is a rated leaderboard opponent.
+    aiControllers,
     codec: jsonCodec<GameState>(),
     store: new SupabaseStore(supabase),
     // Per-request servers don't email; the cron sweep (opts.notify) does, so a

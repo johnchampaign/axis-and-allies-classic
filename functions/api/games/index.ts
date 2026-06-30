@@ -11,8 +11,12 @@ import { fail, json, makeServer, makeStore, type Env } from '../../_lib/gameServ
 interface CreateBody {
   emails?: Partial<Record<Power, string>>;
   seed?: number;
-  /** Powers the server AI plays (random legal moves). */
+  /** Legacy in-memory server AI powers (random legal moves, advanceAI path). */
   aiPowers?: Power[];
+  /** Framework server-driven AI seats (>=0.37): power → difficulty key. These
+   *  powers become rated leaderboard opponents (`ai:axis-and-allies:<key>`); the
+   *  GameServer drives them on create/submit. Preferred over aiPowers. */
+  ai?: Partial<Record<Power, string>>;
 }
 
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
@@ -24,19 +28,38 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     const seed = Number.isInteger(body.seed)
       ? (body.seed as number) >>> 0
       : crypto.getRandomValues(new Uint32Array(1))[0];
-    const ai = (body.aiPowers ?? []).filter((p): p is Power => TURN_ORDER.includes(p));
-    if (ai.length >= TURN_ORDER.length) {
+
+    // Framework server-driven AI seats (rated). Only known difficulty keys.
+    const fwAi = Object.fromEntries(
+      Object.entries(body.ai ?? {})
+        .filter(([p, d]) => TURN_ORDER.includes(p as Power) && d === 'standard'),
+    ) as Partial<Record<Power, string>>;
+    const fwAiPowers = Object.keys(fwAi) as Power[];
+
+    // Legacy in-memory AI seats (NOT also framework-driven — that would
+    // double-drive the same power).
+    const legacyAi = (body.aiPowers ?? []).filter(
+      (p): p is Power => TURN_ORDER.includes(p) && !fwAiPowers.includes(p),
+    );
+
+    const allAi = new Set([...fwAiPowers, ...legacyAi]);
+    if (allAi.size >= TURN_ORDER.length) {
       // an all-AI game has no one to finish it and can grow without bound
       return json({ error: 'at least one power must be human' }, 400);
     }
+
     const result = await server.createGame({
-      initialState: createGame(seed, ai),
+      // Only legacy AI powers go into state.ai (the advanceAI path reads it).
+      // Framework-driven powers are marked via meta.identities by createGame.
+      initialState: createGame(seed, legacyAi),
       players: TURN_ORDER,
       emails: body.emails,
+      ...(fwAiPowers.length ? { ai: fwAi } : {}),
     });
-    // USSR may be an AI seat — start playing it in the background; the first
-    // client poll picks up (and continues) from wherever the slice ended
-    if (ai.length > 0) {
+    // Legacy AI (e.g. USSR) — start playing it in the background; the first client
+    // poll picks up (and continues) from wherever the slice ended. Framework AI is
+    // already driven synchronously inside createGame, so it needs no kick here.
+    if (legacyAi.length > 0) {
       waitUntil(advanceAI(makeStore(env), env, result.gameId).catch(() => {}));
     }
     return json(result, 201);

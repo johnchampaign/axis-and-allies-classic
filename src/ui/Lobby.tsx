@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Power } from '../engine/types';
-import { TURN_ORDER } from '../engine/types';
+import type { Power, Side } from '../engine/types';
+import { SIDE_OF, TURN_ORDER } from '../engine/types';
 import { saveTokens } from './client';
 import { POWER_NAME } from './theme';
 
@@ -52,6 +52,39 @@ export function Lobby() {
     }
   };
 
+  // Rated vs-AI: the human controls every power on `humanSide`; the framework's
+  // server-driven AI ('standard') controls every opposing power as a leaderboard
+  // opponent (identity ai:axis-and-allies:standard). Navigates straight to one of
+  // the human's seats; PlayPage attaches the signed-in identity so the result
+  // counts.
+  const createVsAi = async (humanSide: Side) => {
+    setCreating(true);
+    setError(null);
+    try {
+      const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
+      const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
+      const ai: Partial<Record<Power, string>> = {};
+      for (const p of aiPwrs) ai[p] = 'standard';
+      const r = await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ai }),
+      });
+      const data = (await r.json()) as { gameId: string; invites: Record<Power, string>; error?: string };
+      if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+      // Wallet holds only the human side's seats — AI seats play themselves.
+      const tokens: Record<string, string> = {};
+      for (const p of humanPowers) tokens[p] = new URL(data.invites[p]).searchParams.get('t')!;
+      saveTokens(data.gameId, tokens);
+      // Open the board as the human side's first power.
+      const first = humanPowers[0]!;
+      window.location.assign(data.invites[first].replace(/^https?:\/\/[^/]+/, ''));
+    } catch (e) {
+      setError((e as Error).message);
+      setCreating(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 640, margin: '4rem auto', padding: 16 }}>
       <h1>Axis &amp; Allies Classic</h1>
@@ -61,6 +94,23 @@ export function Lobby() {
       <p>Online async, 2–5 players. One seat per power; share each invite link with whoever plays that power (one player may hold several). Hotseat: just open the game yourself — this browser keeps all five seats.</p>
       {!result && (
         <div>
+          <fieldset style={{ border: '1px solid #4a6', borderRadius: 8, marginBottom: 14 }}>
+            <legend>Play vs AI — rated</legend>
+            <p style={{ fontSize: 13, opacity: 0.85, margin: '4px 8px' }}>
+              You command one whole side; the AI commands the other. Sign in first
+              so your result counts on the leaderboard.
+            </p>
+            <div style={{ display: 'flex', gap: 10, margin: '4px 8px 8px' }}>
+              <button disabled={creating} onClick={() => createVsAi('allies')}
+                style={{ fontSize: 16, padding: '8px 16px', borderRadius: 8, cursor: 'pointer' }}>
+                {creating ? 'Creating…' : 'Play Allies vs AI Axis'}
+              </button>
+              <button disabled={creating} onClick={() => createVsAi('axis')}
+                style={{ fontSize: 16, padding: '8px 16px', borderRadius: 8, cursor: 'pointer' }}>
+                {creating ? 'Creating…' : 'Play Axis vs AI Allies'}
+              </button>
+            </div>
+          </fieldset>
           <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
             <legend>AI opponents (attacks with air support and amphibious landings; strongest as Axis)</legend>
             {TURN_ORDER.map((p) => (

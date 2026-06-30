@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",
-    "digital-boardgame-framework": "^0.36.0",
+    "digital-boardgame-framework": "^0.37.0",
     "jszip": "^3.10.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
