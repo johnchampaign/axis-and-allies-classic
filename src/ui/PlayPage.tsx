@@ -124,7 +124,13 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
             ))}
           </span>
           {artLoaded ? (
-            <button style={{ background: 'none', color: '#8ab', border: 'none', cursor: 'pointer' }}
+            // A bordered pill (not a bare text link) so the map-style toggle is
+            // actually findable — a player reported hunting for minutes to switch
+            // between the simple map and the classic art.
+            <button style={{
+                background: '#3d5166', color: '#cfe3f5', border: '1px solid #567',
+                borderRadius: 4, padding: '2px 8px', margin: '0 6px', cursor: 'pointer',
+              }}
               onClick={() => {
                 const next = boardStyle === 'art' ? 'map' : 'art';
                 setBoardStyle(next);
