@@ -49,7 +49,13 @@ export const Board = memo(function Board({
       viewBox={`0 0 ${GEO.width} ${GEO.height}`}
       style={{ width: '100%', height: 'auto', background: SEA_COLOR, borderRadius: 8 }}
     >
-      {Object.entries(GEO.territories).map(([tid, g]) => (
+      {/* Water first, then land — several small islands (Japan, Philippines,
+          Okinawa, Midway, …) sit geometrically inside a sea-zone polygon, so if
+          the sea zone paints later it steals their clicks and only the sea zone
+          is selectable. Drawing land last puts each island on top and clickable. */}
+      {Object.entries(GEO.territories)
+        .sort(([a], [b]) => Number(isWater(b)) - Number(isWater(a)))
+        .map(([tid, g]) => (
         <g
           key={tid}
           onClick={() => onClickTerritory(tid)}
