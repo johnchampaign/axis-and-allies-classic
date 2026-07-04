@@ -24,7 +24,14 @@ const standard: PlayerController<GameState, Action, Power> = {
     if (suggestion && adapter.tryApplyAction!(state, suggestion, actor).ok) {
       return suggestion;
     }
-    const legal = adapter.legalActions(state, actor);
+    // legalActions is a REPRESENTATIVE subset (adapter contract) and the engine
+    // is the legality authority — so validate the random pick too. An unvalidated
+    // pick that tryApplyAction later rejects makes the server's driveAi loop break
+    // mid-turn, wedging the game on an AI seat with no way for a human to re-drive
+    // it (fetch doesn't run AI). Filter to engine-accepted actions so the AI can
+    // never wedge a live game, exactly as this controller's contract promises.
+    const legal = adapter.legalActions(state, actor)
+      .filter((a) => adapter.tryApplyAction!(state, a, actor).ok);
     if (legal.length === 0) {
       // Shouldn't happen — currentActor said this seat may act. Surface clearly.
       throw new Error(`no legal action for AI seat ${actor}`);

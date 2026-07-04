@@ -6,7 +6,7 @@ import { jsonCodec } from 'digital-boardgame-framework';
 import { SupabaseBroadcaster, type SnapshotStore } from 'digital-boardgame-framework/server';
 import { chooseAction } from '../../src/ai/heuristic';
 import { axisAndAlliesAdapter as adapter } from '../../src/engine/adapter';
-import type { GameState } from '../../src/engine/types';
+import type { GameState, Power } from '../../src/engine/types';
 import type { Env } from './gameServer';
 
 const codec = jsonCodec<GameState>();
@@ -29,8 +29,19 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
   const latest = await store.getLatest(gameId);
   if (!latest) return false;
   let state = decodeSnapshot(latest.state);
-  const ai = state.ai;
-  if (!ai || ai.length === 0) return false;
+
+  // AI seats = legacy in-memory powers (state.ai) UNION framework server-driven
+  // seats (meta.identities values prefixed `ai:`). Covering the framework seats
+  // here is what lets a stalled framework AI self-heal on GET: the GameServer only
+  // drives AI inside submit/createGame, so if its bounded driveAi loop ever breaks
+  // mid-turn (e.g. an edge action it rejected), the human on the clock — who has no
+  // move to submit while it's the AI's turn — could otherwise never un-wedge it.
+  const meta = await store.getGameMeta(gameId).catch(() => null);
+  const fwAiSeats = Object.entries(meta?.identities ?? {})
+    .filter(([, id]) => typeof id === 'string' && id.startsWith('ai:'))
+    .map(([seat]) => seat as Power);
+  const ai = [...new Set<Power>([...(state.ai ?? []), ...fwAiSeats])];
+  if (ai.length === 0) return false;
 
   // adaptive slice: every step clones the whole state, so big late-game states
   // get smaller slices to stay inside the Pages CPU budget
@@ -51,11 +62,16 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
       if (r.ok) { state = r.state; applied = true; }
     }
     if (!applied) {
-      const legal = adapter.legalActions(state, actor);
-      if (legal.length === 0) break; // shouldn't happen; bail rather than spin
+      // Validate the pick: legalActions is a representative subset, so filter to
+      // engine-accepted actions rather than breaking on one stale entry (which
+      // would strand the game — endPhase is always legal for the current actor, so
+      // a non-empty filtered list is guaranteed while the game is live).
+      const legal = adapter.legalActions(state, actor)
+        .filter((a) => adapter.tryApplyAction!(state, a, actor).ok);
+      if (legal.length === 0) break; // genuine dead-end; bail rather than spin
       const action = legal[Math.floor(Math.random() * legal.length)];
       const r = adapter.tryApplyAction!(state, action, actor);
-      if (!r.ok) break; // adapter contract violation — leave for triage, don't spin
+      if (!r.ok) break; // impossible after filter — keep the contract explicit
       state = r.state;
     }
     steps++;
