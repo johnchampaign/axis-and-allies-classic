@@ -40,6 +40,7 @@ function logLosses(state: GameState, units: Unit[]): void {
  * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
 function fights(state: GameState, u: Unit): boolean {
   if (!isCombatUnit(u)) return false;
+  if (u.combatDone) return false; // finished its combat this turn (retreated / SBR done)
   if (def(state.battle!.territory).water && UNITS[u.type].domain === 'land') return false;
   return true;
 }
@@ -134,7 +135,10 @@ function resolveSBR(state: GameState, t: string, actor: Power): EngineResult {
     state.ipcs[victim] -= paid;
     log(state, `SBR on ${def(t).name}: ${victim} pays ${paid} IPCs.`);
   }
-  for (const u of bombers) u.sbr = false;
+  // Surviving raiders are done: the SBR is a single pass, then they fly home in
+  // noncombat (spec §7). Marking them combatDone stops the leftover bombers from
+  // re-flagging a defended target as a pending ground battle they cannot win.
+  for (const u of bombers) { u.sbr = false; u.combatDone = true; }
   return ok;
 }
 
@@ -475,7 +479,7 @@ export function applyRetreat(
   if (!retreatZones(state).includes(a.to)) return no('must retreat to one space attackers came from');
   const ts = battleTs(state);
   for (const u of attackers(state)) {
-    if (isAir(u)) continue; // planes fly home in noncombat (spec §6.4)
+    if (isAir(u)) { u.combatDone = true; continue; } // planes fly home in noncombat (spec §6.4)
     ts.units.splice(ts.units.indexOf(u), 1);
     terr(state, a.to).units.push(u);
   }

@@ -41,6 +41,13 @@ export interface Unit {
   amphibious?: boolean;
   /** Bomber flying a strategic bombing raid this turn (spec §7). */
   sbr?: boolean;
+  /** Air whose combat is finished this turn: it retreated with the ground force
+   *  (spec §6.4) or completed a strategic bombing raid (spec §7). It no longer
+   *  requires or joins a battle and simply flies home in noncombat. Without this,
+   *  air left stranded over an enemy territory re-flags the space as a pending
+   *  battle (live reports: fighters/bombers stuck after a retreat; SBR bombers
+   *  dragged into a fight to the death). */
+  combatDone?: boolean;
   /** Space this unit launched its combat move from (retreat legality, spec §6.4). */
   origin?: string;
   /** Factory: limited production (built or captured, spec §9.3). */

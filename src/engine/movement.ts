@@ -81,9 +81,9 @@ function moveLand(
 
   // combat move
   if (units.some((u) => u.type === 'aaGun')) return no('AA guns cannot make combat moves');
-  if (!destEnemy && !destNeutral) {
-    return no('combat moves must end in enemy or neutral territory — move into friendly territory during the noncombat phase');
-  }
+  const destFriendly = isFriendlySpace(state, dest, actor);
+
+  let blitzed = false;
   if (steps === 2) {
     // armor only; blitz or move through friendly first (spec §4.1)
     if (units.some((u) => u.type !== 'armor')) return no('only armor moves 2');
@@ -97,7 +97,21 @@ function moveLand(
       if (midNeutral || midDefended) return no('tanks cannot blitz through occupied or neutral territory');
       // blitz: enemy-controlled & unoccupied — capture in passing (spec §4.1)
       captureTerritory(state, mid, actor, units);
+      blitzed = true;
     }
+  }
+
+  // A blitzing tank may finish in a friendly territory: it captured the empty
+  // enemy space in passing and rolls on — the second space of a blitz may be
+  // enemy, enemy-controlled, friendly, or neutral (spec §4.1, rulebook p. 13).
+  // Any non-blitz combat move must end in enemy or neutral territory; friendly
+  // destinations belong to the noncombat phase.
+  if (!destEnemy && !destNeutral) {
+    if (blitzed && destFriendly) {
+      finishLandMove(state, a, units, dest, 'combatMove');
+      return ok;
+    }
+    return no('combat moves must end in enemy or neutral territory — move into friendly territory during the noncombat phase');
   }
   if (destNeutral) {
     violateNeutral(state, dest, actor);

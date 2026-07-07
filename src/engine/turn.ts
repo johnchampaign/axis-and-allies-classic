@@ -299,7 +299,7 @@ export function pendingBattleSpaces(state: GameState): string[] {
   const out: string[] = [];
   for (const [t, ts] of Object.entries(state.territories)) {
     const mine = ts.units.filter(
-      (u) => u.owner === p && u.type !== 'factory' && u.type !== 'aaGun',
+      (u) => u.owner === p && u.type !== 'factory' && u.type !== 'aaGun' && !u.combatDone,
     );
     if (mine.length === 0) continue;
     const sbr = mine.some((u) => u.sbr);

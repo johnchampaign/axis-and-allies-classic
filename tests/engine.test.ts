@@ -5,6 +5,7 @@ import { chooseAction } from '../src/ai/heuristic';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
 import { createGame } from '../src/engine/setup';
 import { beginTurnSnapshot } from '../src/engine/setup';
+import { pendingBattleSpaces } from '../src/engine/turn';
 import type { Action, GameState, Power, Unit, UnitType } from '../src/engine/types';
 
 let nextId = 9000;
@@ -65,6 +66,26 @@ describe('movement', () => {
     const tank = addUnit(s, 'east-europe', 'armor', 'germany');
     // karelia starts with soviet units
     expectReject(s, { kind: 'move', unitIds: [tank.id], path: ['east-europe', 'karelia-ssr', 'russia'] }, 'germany', /blitz/);
+  });
+
+  it('armor may blitz through an empty enemy territory and finish in friendly (spec §4.1, p.13)', () => {
+    let s = at('combatMove', 'germany');
+    clear(s, 'karelia-ssr');            // russia-owned & empty -> blitzable pass-through
+    clear(s, 'finland-norway');
+    s.territories['finland-norway'].owner = 'germany'; // friendly landing space beyond
+    const tank = addUnit(s, 'east-europe', 'armor', 'germany');
+    s = apply(s, { kind: 'move', unitIds: [tank.id], path: ['east-europe', 'karelia-ssr', 'finland-norway'] }, 'germany');
+    expect(s.territories['karelia-ssr'].owner).toBe('germany');           // captured in passing
+    expect(s.territories['finland-norway'].units.some((u) => u.id === tank.id)).toBe(true);
+    expect(pendingBattleSpaces(s)).not.toContain('karelia-ssr');          // no phantom battle left behind
+  });
+
+  it('a non-blitz combat move still may not end in friendly territory', () => {
+    const s = at('combatMove', 'germany');
+    clear(s, 'karelia-ssr');
+    s.territories['karelia-ssr'].owner = 'germany'; // friendly neighbour of east-europe
+    const inf = addUnit(s, 'east-europe', 'infantry', 'germany');
+    expectReject(s, { kind: 'move', unitIds: [inf.id], path: ['east-europe', 'karelia-ssr'] }, 'germany', /end in enemy or neutral/);
   });
 
   it('infantry cannot move 2', () => {
@@ -182,6 +203,31 @@ describe('combat', () => {
     s.territories['finland-norway'].owner = 'uk';
     s = apply(s, { kind: 'move', unitIds: [inf.id], path: ['finland-norway', 'karelia-ssr'] }, 'uk');
     expect(s.territories['karelia-ssr'].owner).toBe('russia'); // spec §6.6 liberation
+  });
+
+  it('a retreat leaves surviving attacker air to fly home in noncombat, not a phantom battle (spec §6.4)', () => {
+    let s = at('combat', 'germany');
+    clear(s, 'karelia-ssr');
+    s.territories['karelia-ssr'].owner = 'russia';
+    addUnit(s, 'karelia-ssr', 'infantry', 'russia');        // defender holds
+    s.territories['east-europe'].owner = 'germany';          // valid retreat origin
+    const inf = addUnit(s, 'karelia-ssr', 'infantry', 'germany', { fought: true, origin: 'east-europe' });
+    const ftr = addUnit(s, 'karelia-ssr', 'fighter', 'germany', { fought: true, origin: 'east-europe' });
+    s.battle = {
+      territory: 'karelia-ssr', attacker: 'germany', round: 1,
+      origins: { [inf.id]: 'east-europe', [ftr.id]: 'east-europe' },
+      amphibious: false, bombardIds: [], pendingHits: [], defenderCasualties: [],
+      stage: 'retreatDecision',
+    };
+    s = apply(s, { kind: 'retreat', to: 'east-europe' }, 'germany');
+    expect(s.battle).toBeNull();
+    expect(s.territories['east-europe'].units.some((u) => u.id === inf.id)).toBe(true); // land pulled back
+    const air = s.territories['karelia-ssr'].units.find((u) => u.id === ftr.id);
+    expect(air?.combatDone).toBe(true);                       // air stays over the target, marked done
+    expect(pendingBattleSpaces(s)).not.toContain('karelia-ssr'); // the reported wedge is gone
+    // combat phase can now be ended (no unresolved battles)
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    expect(s.phase).toBe('noncombat');
   });
 });
 
@@ -397,6 +443,25 @@ describe('strategic bombing', () => {
     // bomber may have been downed by AA; if it survived, UK paid 1-6
     const survived = s.territories['united-kingdom'].units.some((u) => u.id === b.id);
     if (survived) expect(s.ipcs.uk).toBeLessThan(30);
+  });
+
+  it('an SBR against a defended complex ends after one pass — bombers are not dragged into a ground fight (spec §7)', () => {
+    let s = at('combatMove', 'germany', 31);
+    addUnit(s, 'united-kingdom', 'infantry', 'uk'); // defenders share the SBR target
+    const b = addUnit(s, 'germany', 'bomber', 'germany');
+    s.ipcs.uk = 30;
+    s = apply(s, { kind: 'move', unitIds: [b.id], path: ['germany', 'west-europe', 'north-sea-zone', 'united-kingdom'], sbr: true }, 'germany');
+    s = apply(s, { kind: 'endPhase' }, 'germany'); // combatMove -> combat
+    expect(pendingBattleSpaces(s)).toContain('united-kingdom'); // the raid is queued
+    s = apply(s, { kind: 'startBattle', territory: 'united-kingdom' }, 'germany');
+    expect(s.battle).toBeNull(); // SBR resolves immediately; no lingering battle
+    // whether or not AA downed it, the target must no longer demand a battle...
+    expect(pendingBattleSpaces(s)).not.toContain('united-kingdom');
+    // ...and the raid must be over: combat phase can now be ended
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    expect(s.phase).toBe('noncombat');
+    const survivor = s.territories['united-kingdom'].units.find((u) => u.id === b.id);
+    if (survivor) expect(survivor.combatDone).toBe(true); // flies home in noncombat
   });
 });
 

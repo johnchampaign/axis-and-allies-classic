@@ -76,6 +76,7 @@ export function beginTurnSnapshot(state: GameState): void {
         u.fought = false;
         u.amphibious = false;
         u.sbr = false;
+        u.combatDone = false;
         u.origin = undefined;
       }
       if (
