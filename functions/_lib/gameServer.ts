@@ -31,8 +31,9 @@ export interface Env {
 export type Server = GameServer<GameState, Action, Power>;
 
 // Ranked play: verify hub-issued identity tokens against the hub's JWKS, cached
-// for an hour across warm isolates.
-const HUB = 'https://games-hub-5vo.pages.dev';
+// for an hour across warm isolates. (Exported: advanceAI also reports ratings
+// to the hub when an AI move ends the game outside GameServer.submit.)
+export const HUB = 'https://games-hub-5vo.pages.dev';
 let _jwks: Jwks | undefined;
 let _jwksAt = 0;
 async function getJwks(): Promise<Jwks> {
