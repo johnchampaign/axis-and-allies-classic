@@ -327,6 +327,7 @@ function MovePanel({
   selected: string | null; selectedUnits: number[];
 }) {
   const [dest, setDest] = useState('');
+  const [via, setVia] = useState(''); // optional blitz waypoint for armor
   const [sbr, setSbr] = useState(false);
   const phase = view.phase;
   const units = selected ? view.territories[selected].units.filter((u) => u.owner === you) : [];
@@ -431,6 +432,19 @@ function MovePanel({
       .sort((a, b) => a.dist - b.dist || tname(a.tid).localeCompare(tname(b.tid)));
   }, [selected, selectedUnits]);
 
+  // Blitz waypoint: armor moving 2 may pass THROUGH an empty enemy territory to
+  // capture it in passing, then attack on. When the target is also directly
+  // adjacent, shortest-path would go straight there, so offer an explicit "via"
+  // — any land neighbour of the origin that also borders the target (live report:
+  // wanted to blitz Libya→French Eq. Africa→Anglo-Sudan-Egypt).
+  const armorBlitz = phase === 'combatMove' && chosen.length > 0 && chosen.every((u) => u.type === 'armor');
+  const viaOptions = useMemo(() => {
+    if (!armorBlitz || !selected || !dest || dest === selected) return [];
+    return (TERR[selected]?.connections ?? []).filter(
+      (m) => m !== dest && !TERR[m].water && (TERR[m]?.connections ?? []).includes(dest),
+    );
+  }, [armorBlitz, selected, dest]);
+
   // transports in adjacent sea zones we could load onto
   // bulk loading: distribute the chosen land units across a zone's transports
   // (2 infantry per boat, armor/AA need an empty one — no mixing in Classic)
@@ -492,12 +506,21 @@ function MovePanel({
           <div>{tname(selected)} — {chosen.length} unit(s) selected.</div>
           {chosen.length > 0 && (
             <div>
-              <select value={dest} onChange={(e) => setDest(e.target.value)}>
+              <select value={dest} onChange={(e) => { setDest(e.target.value); setVia(''); }}>
                 <option value="">— destination —</option>
                 {destOptions.map((o) => (
                   <option key={o.tid} value={o.tid}>{tname(o.tid)} ({o.dist})</option>
                 ))}
               </select>
+              {viaOptions.length > 0 && (
+                <select value={via} onChange={(e) => setVia(e.target.value)} style={{ marginLeft: 6 }}
+                  title="Blitz through an empty enemy territory (captured in passing) on the way to the target">
+                  <option value="">direct route</option>
+                  {viaOptions.map((m) => (
+                    <option key={m} value={m}>via {tname(m)}</option>
+                  ))}
+                </select>
+              )}
               {phase === 'combatMove' && chosen.every((u) => u.type === 'bomber') && (
                 <label style={{ marginLeft: 8 }}>
                   <input type="checkbox" checked={sbr} onChange={(e) => setSbr(e.target.checked)} /> SBR
@@ -510,10 +533,13 @@ function MovePanel({
                   // air overflight triggers the 3-IPC violation (route manually if wanted).
                   const moves: Action[] = [];
                   for (const [d, units] of byDomain) {
-                    const path = shortestPath(
-                      selected, dest, view.neutrals, d,
-                      d === 'air' ? new Set<string>() : hostileSpaces,
-                    );
+                    // honour an explicit blitz waypoint for the land group
+                    const path = via && d === 'land'
+                      ? [selected, via, dest]
+                      : shortestPath(
+                          selected, dest, view.neutrals, d,
+                          d === 'air' ? new Set<string>() : hostileSpaces,
+                        );
                     if (!path) { return; }
                     moves.push({
                       kind: 'move', unitIds: units.map((u) => u.id), path,

@@ -248,7 +248,13 @@ function resolveQueue(state: GameState): void {
     const units = ph.eligible.map((id) => battleTs(state).units.find((u) => u.id === id)!);
     const allSame = new Set(units.map((u) => u.type)).size === 1;
     if (ph.hits >= ph.eligible.length || allSame) {
-      applyCasualtyChoice(state, ph.eligible.slice(0, ph.hits));
+      // Auto-selection: among same-type units, lose the ones carrying NOTHING
+      // first. An empty transport is a strictly better casualty than a loaded one
+      // — losing a loaded transport takes its cargo down with it (killUnit). Stable
+      // for everything else (all cargo counts equal → order preserved).
+      const cargoOf = (id: number) => battleTs(state).units.find((u) => u.id === id)?.cargo.length ?? 0;
+      const ordered = [...ph.eligible].sort((x, y) => cargoOf(x) - cargoOf(y));
+      applyCasualtyChoice(state, ordered.slice(0, ph.hits));
       continue;
     }
     return; // waiting for a chooseCasualties action
