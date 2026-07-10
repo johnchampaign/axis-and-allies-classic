@@ -357,6 +357,9 @@ export function applyLoad(
   if (state.battle) return no('battle in progress');
   const tr = findUnit(state, a.transportId);
   if (!tr || tr.unit.type !== 'transport' || tr.unit.owner !== actor) return no('not your transport');
+  // A transport may load before, during, or after it sails (spec §5.2) — so
+  // movesUsed is NOT a barrier — but once it has UNLOADED it is done for the turn.
+  if (tr.unit.unloaded) return no('this transport has already unloaded this turn');
   const zone = tr.at;
   let loaded = 0;
   const cargoUnits: { unit: Unit; at: string }[] = [];
@@ -425,8 +428,10 @@ export function applyOffload(
   }
   tr.unit.cargo = [];
   // Unloading ends the transport's move for the turn (spec §5.2): exhaust its
-  // movement so a split-move transport cannot sail on after it has dropped cargo.
+  // movement so a split-move transport cannot sail on after it has dropped cargo,
+  // and mark it done so it cannot reload / unload again this turn.
   tr.unit.movesUsed = UNITS[tr.unit.type].move;
+  tr.unit.unloaded = true;
   if (state.phase !== 'combat') {
     tr.unit.movedPhase = state.phase as 'combatMove' | 'noncombat';
   }

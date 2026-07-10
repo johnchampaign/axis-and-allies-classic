@@ -56,10 +56,11 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       emails: body.emails,
       ...(fwAiPowers.length ? { ai: fwAi } : {}),
     });
-    // Legacy AI (e.g. USSR) — start playing it in the background; the first client
-    // poll picks up (and continues) from wherever the slice ended. Framework AI is
-    // already driven synchronously inside createGame, so it needs no kick here.
-    if (legacyAi.length > 0) {
+    // Any AI seat that moves first (legacy OR framework-identity) — start playing
+    // it in the background; the first client poll picks up and continues from
+    // wherever the bounded slice ended. We no longer register aiControllers, so
+    // createGame does not drive AI itself — advanceAI is the sole driver.
+    if (allAi.size > 0) {
       waitUntil(advanceAI(makeStore(env), env, result.gameId).catch(() => {}));
     }
     return json(result, 201);

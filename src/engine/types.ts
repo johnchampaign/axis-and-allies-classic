@@ -50,6 +50,10 @@ export interface Unit {
   combatDone?: boolean;
   /** Space this unit launched its combat move from (retreat legality, spec §6.4). */
   origin?: string;
+  /** Transport that has unloaded its cargo this turn — it is done for the turn
+   *  (a transport unloads once). Distinguishes "moved 2 but can still load/unload
+   *  in place" from "already dropped its troops". */
+  unloaded?: boolean;
   /** Factory: limited production (built or captured, spec §9.3). */
   factoryLimited?: boolean;
   /** Factory: usable from this globalTurn on (captured complexes wait one turn, spec §6.6). */

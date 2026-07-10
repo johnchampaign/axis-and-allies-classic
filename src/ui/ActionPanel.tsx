@@ -460,11 +460,11 @@ function MovePanel({
         ids.every((id) => zoneUnits.find((u) => u.id === id)?.type === 'infantry');
       // empty boats take 2 infantry or 1 heavy; a boat already carrying one
       // infantry has room for exactly one more infantry (no mixing in Classic)
-      // A transport can load before, during, or after it sails (spec §5.2), so a
-      // boat that has already moved this turn is still loadable as long as it has
-      // movement left to carry the cargo onward (movesUsed < 2). Unloading exhausts
-      // its movement, so a boat that has dropped cargo is correctly excluded.
-      const canStillLoad = (u: (typeof zoneUnits)[number]) => u.movesUsed < UNITS.transport.move;
+      // A transport can load before, during, OR after it sails (spec §5.2) — even
+      // at its final sea zone, to then unload in place — so movesUsed is NOT a
+      // barrier (live report: couldn't load a 2nd unit after the boat used both
+      // moves). Only UNLOADING ends a transport's turn.
+      const canStillLoad = (u: (typeof zoneUnits)[number]) => !u.unloaded;
       const empty = zoneUnits.filter(
         (u) => u.type === 'transport' && u.owner === you && u.cargo.length === 0 && canStillLoad(u),
       );

@@ -78,6 +78,7 @@ export function beginTurnSnapshot(state: GameState): void {
         u.sbr = false;
         u.combatDone = false;
         u.origin = undefined;
+        u.unloaded = false;
       }
       if (
         u.type === 'factory' && u.owner === p && ts.owner === p &&
