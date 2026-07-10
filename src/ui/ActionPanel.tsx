@@ -460,11 +460,16 @@ function MovePanel({
         ids.every((id) => zoneUnits.find((u) => u.id === id)?.type === 'infantry');
       // empty boats take 2 infantry or 1 heavy; a boat already carrying one
       // infantry has room for exactly one more infantry (no mixing in Classic)
+      // A transport can load before, during, or after it sails (spec §5.2), so a
+      // boat that has already moved this turn is still loadable as long as it has
+      // movement left to carry the cargo onward (movesUsed < 2). Unloading exhausts
+      // its movement, so a boat that has dropped cargo is correctly excluded.
+      const canStillLoad = (u: (typeof zoneUnits)[number]) => u.movesUsed < UNITS.transport.move;
       const empty = zoneUnits.filter(
-        (u) => u.type === 'transport' && u.owner === you && u.cargo.length === 0 && !u.movedPhase,
+        (u) => u.type === 'transport' && u.owner === you && u.cargo.length === 0 && canStillLoad(u),
       );
       const halfFull = zoneUnits.filter(
-        (u) => u.type === 'transport' && u.owner === you && !u.movedPhase &&
+        (u) => u.type === 'transport' && u.owner === you && canStillLoad(u) &&
           u.cargo.length === 1 && isInfCargo(u.cargo),
       );
       if (empty.length === 0 && halfFull.length === 0) continue;
@@ -566,9 +571,10 @@ function MovePanel({
           {coastalLand && haveLandChosen && loadPlans.length === 0 && (
             <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
               To put these on a transport, the transport must already be in the
-              adjacent sea zone and not have moved yet this turn — load before you
-              sail. (Land units can’t move into a sea zone on their own, so sea
-              zones don’t show up in the destination list.)
+              adjacent sea zone with movement still to spend (a boat that has used
+              both its sea moves, or already unloaded, can’t take on more cargo).
+              (Land units can’t move into a sea zone on their own, so sea zones
+              don’t show up in the destination list.)
             </div>
           )}
           {transports.length > 1 && (

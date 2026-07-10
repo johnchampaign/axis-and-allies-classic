@@ -257,6 +257,45 @@ describe('transports', () => {
     expect(ashore).toContain(i1.id);
     expect(ashore).toContain(i2.id);
   });
+
+  it('a transport may pick up cargo mid-route: sail, load, sail on (spec §5.2)', () => {
+    // UK: load 1 inf in the UK, sail North Sea -> Baltic, pick up a second inf
+    // from (UK-held) Finland-Norway there, sail back to the North Sea, and unload
+    // both into the UK. The pick-up-along-the-way leg was previously blocked
+    // because the first sea move ended the transport's whole move.
+    let s = at('noncombat', 'uk', 41);
+    clear(s, 'north-sea-zone');
+    clear(s, 'baltic-sea-zone');
+    s.territories['finland-norway'].owner = 'uk';
+    clear(s, 'finland-norway');
+    const tr = addUnit(s, 'north-sea-zone', 'transport', 'uk');
+    const i1 = addUnit(s, 'united-kingdom', 'infantry', 'uk');
+    const i2 = addUnit(s, 'finland-norway', 'infantry', 'uk');
+    s = apply(s, { kind: 'load', unitIds: [i1.id], transportId: tr.id }, 'uk');
+    s = apply(s, { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'baltic-sea-zone'] }, 'uk');
+    // mid-route load at the Baltic
+    s = apply(s, { kind: 'load', unitIds: [i2.id], transportId: tr.id }, 'uk');
+    // second leg — must be allowed (only 2 sea zones used in total)
+    s = apply(s, { kind: 'move', unitIds: [tr.id], path: ['baltic-sea-zone', 'north-sea-zone'] }, 'uk');
+    const back = s.territories['north-sea-zone'].units.map((u) => u.id);
+    expect(back).toEqual(expect.arrayContaining([tr.id, i1.id, i2.id]));
+    s = apply(s, { kind: 'offload', transportId: tr.id, to: 'united-kingdom' }, 'uk');
+    const ashore = s.territories['united-kingdom'].units.map((u) => u.id);
+    expect(ashore).toEqual(expect.arrayContaining([i1.id, i2.id]));
+    // its move is spent: it may not sail a third zone after unloading
+    expectReject(s, { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'baltic-sea-zone'] }, 'uk', /at most 2/);
+  });
+
+  it('a transport cannot sail more than 2 zones total across split legs', () => {
+    let s = at('noncombat', 'uk', 42);
+    clear(s, 'north-sea-zone');
+    clear(s, 'baltic-sea-zone');
+    const tr = addUnit(s, 'north-sea-zone', 'transport', 'uk');
+    s = apply(s, { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'baltic-sea-zone'] }, 'uk');
+    s = apply(s, { kind: 'move', unitIds: [tr.id], path: ['baltic-sea-zone', 'north-sea-zone'] }, 'uk');
+    // two zones used — a third leg is illegal
+    expectReject(s, { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'baltic-sea-zone'] }, 'uk', /at most 2/);
+  });
 });
 
 describe('contested spaces', () => {

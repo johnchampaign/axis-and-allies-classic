@@ -161,10 +161,16 @@ function moveSea(
 ): EngineResult {
   const phase = state.phase as 'combatMove' | 'noncombat';
   for (const t of a.path) if (!def(t).water) return no('ships cannot enter land');
-  if (steps > 2) return no('ships move at most 2');
   for (const u of units) {
-    if (u.movedPhase) return no('ship already moved this turn');
     if (UNITS[u.type].domain !== 'sea') return no('not a ship');
+    // A ship may split its 2-space movement into segments within one phase — a
+    // transport can sail, pick up cargo mid-route, then sail on (spec §5.2:
+    // cargo may be loaded "before, during, or after the transport moves"). What
+    // it may NOT do: move in two different phases, sail after fighting, or move
+    // more than its allowance summed across the segments.
+    if (u.movedPhase && u.movedPhase !== phase) return no('ship already moved this turn');
+    if (u.fought) return no('ship already in a battle');
+    if (u.movesUsed + steps > UNITS[u.type].move) return no('ships move at most 2');
   }
   const fromTs = terr(state, a.path[0]);
   // carried fighters ride a carrier; cargo rides transports — validate capacity
@@ -418,8 +424,11 @@ export function applyOffload(
     }
   }
   tr.unit.cargo = [];
+  // Unloading ends the transport's move for the turn (spec §5.2): exhaust its
+  // movement so a split-move transport cannot sail on after it has dropped cargo.
+  tr.unit.movesUsed = UNITS[tr.unit.type].move;
   if (state.phase !== 'combat') {
-    tr.unit.movedPhase = state.phase as 'combatMove' | 'noncombat'; // unloading ends its move (spec §5.2)
+    tr.unit.movedPhase = state.phase as 'combatMove' | 'noncombat';
   }
   if (combatish && !hostile && (enemyControlled || neutral)) {
     captureTerritory(state, a.to, actor, cargo);
