@@ -438,12 +438,51 @@ function MovePanel({
   // — any land neighbour of the origin that also borders the target (live report:
   // wanted to blitz Libya→French Eq. Africa→Anglo-Sudan-Egypt).
   const armorBlitz = phase === 'combatMove' && chosen.length > 0 && chosen.every((u) => u.type === 'armor');
+
+  // A land neighbour of the origin that armour can blitz THROUGH: enemy-controlled
+  // and holding no enemy combat units (a lone AA gun / industrial complex is
+  // captured in passing, not a blocker — mirrors engine movement.ts §13.20).
+  const isBlitzable = (m: string): boolean => {
+    if (TERR[m].water || view.neutrals.includes(m)) return false;
+    const ts = view.territories[m];
+    if (!ts || ts.owner === null || POWER_SIDE[ts.owner] === POWER_SIDE[you]) return false;
+    return !ts.units.some(
+      (u) => POWER_SIDE[u.owner] !== POWER_SIDE[you] && u.type !== 'factory' && u.type !== 'aaGun',
+    );
+  };
+
+  // Blitz-and-return: a tank with 2 moves may blitz an empty enemy border
+  // territory and roll back to its own starting space (India→Persia→India), a
+  // legal move the engine allows but the destination BFS omits (start is never a
+  // destination). Offer it as an explicit target when a blitzable neighbour exists
+  // and the armour still has both moves (live report: 1 tank India→Persia→India).
+  const blitzReturnVias = useMemo(() => {
+    if (!armorBlitz || !selected || !chosen.every((u) => budgetOf(u) >= 2)) return [];
+    return (TERR[selected]?.connections ?? []).filter(isBlitzable);
+  }, [armorBlitz, selected, selectedUnits, view]);
+
+  // Blitz waypoint: armor moving 2 may pass THROUGH an empty enemy territory to
+  // capture it in passing, then attack on. When the target is also directly
+  // adjacent, shortest-path would go straight there, so offer an explicit "via"
+  // — any land neighbour of the origin that also borders the target (live report:
+  // wanted to blitz Libya→French Eq. Africa→Anglo-Sudan-Egypt).
   const viaOptions = useMemo(() => {
-    if (!armorBlitz || !selected || !dest || dest === selected) return [];
+    if (!armorBlitz || !selected || !dest) return [];
+    // returning to start: only a real blitz (through empty enemy) is legal, so
+    // restrict to blitzable neighbours (a friendly mid would be rejected).
+    if (dest === selected) return blitzReturnVias;
     return (TERR[selected]?.connections ?? []).filter(
       (m) => m !== dest && !TERR[m].water && (TERR[m]?.connections ?? []).includes(dest),
     );
-  }, [armorBlitz, selected, dest]);
+  }, [armorBlitz, selected, dest, blitzReturnVias]);
+
+  // start space is only a legal destination for a blitz-and-return
+  const destOptionsFull = useMemo(() => {
+    if (armorBlitz && blitzReturnVias.length > 0 && selected && !destOptions.some((o) => o.tid === selected)) {
+      return [...destOptions, { tid: selected, dist: 2 }];
+    }
+    return destOptions;
+  }, [destOptions, armorBlitz, blitzReturnVias, selected]);
 
   // transports in adjacent sea zones we could load onto
   // bulk loading: distribute the chosen land units across a zone's transports
@@ -513,14 +552,16 @@ function MovePanel({
             <div>
               <select value={dest} onChange={(e) => { setDest(e.target.value); setVia(''); }}>
                 <option value="">— destination —</option>
-                {destOptions.map((o) => (
-                  <option key={o.tid} value={o.tid}>{tname(o.tid)} ({o.dist})</option>
+                {destOptionsFull.map((o) => (
+                  <option key={o.tid} value={o.tid}>
+                    {o.tid === selected ? `${tname(o.tid)} — blitz & return` : `${tname(o.tid)} (${o.dist})`}
+                  </option>
                 ))}
               </select>
               {viaOptions.length > 0 && (
                 <select value={via} onChange={(e) => setVia(e.target.value)} style={{ marginLeft: 6 }}
                   title="Blitz through an empty enemy territory (captured in passing) on the way to the target">
-                  <option value="">direct route</option>
+                  {dest !== selected && <option value="">direct route</option>}
                   {viaOptions.map((m) => (
                     <option key={m} value={m}>via {tname(m)}</option>
                   ))}
@@ -531,7 +572,7 @@ function MovePanel({
                   <input type="checkbox" checked={sbr} onChange={(e) => setSbr(e.target.checked)} /> SBR
                 </label>
               )}
-              <button style={primary} disabled={!dest}
+              <button style={primary} disabled={!dest || (dest === selected && !via)}
                 onClick={() => {
                   // one engine move per domain (mixed selections split automatically).
                   // Neutrals are always avoided: land can never pass through them and
