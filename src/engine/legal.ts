@@ -54,9 +54,9 @@ function battleActions(state: GameState, actor: Power): Action[] {
     const subs = terr(state, b.territory).units
       .filter((u) => u.owner === b.attacker && u.type === 'submarine')
       .map((u) => u.id);
-    if (zones.length > 0 && subs.length > 0) {
-      out.push({ kind: 'withdrawSubs', unitIds: subs, to: zones[0] });
-    }
+    // offer EVERY legal withdrawal zone, not just the first — the player picks
+    // where to slip away to (live report: could only withdraw to one zone).
+    if (subs.length > 0) for (const z of zones) out.push({ kind: 'withdrawSubs', unitIds: subs, to: z });
     return out;
   }
   if (b.stage === 'subWithdrawDefender') {
@@ -65,9 +65,7 @@ function battleActions(state: GameState, actor: Power): Action[] {
     const subs = terr(state, b.territory).units
       .filter((u) => isEnemy(u.owner, b.attacker) && u.type === 'submarine')
       .map((u) => u.id);
-    if (zones.length > 0 && subs.length > 0) {
-      out.push({ kind: 'withdrawSubs', unitIds: subs, to: zones[0] });
-    }
+    if (subs.length > 0) for (const z of zones) out.push({ kind: 'withdrawSubs', unitIds: subs, to: z });
     return out;
   }
   // retreatDecision
