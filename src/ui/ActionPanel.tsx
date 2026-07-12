@@ -550,7 +550,15 @@ function MovePanel({
           <div>{tname(selected)} — {chosen.length} unit(s) selected.</div>
           {chosen.length > 0 && (
             <div>
-              <select value={dest} onChange={(e) => { setDest(e.target.value); setVia(''); }}>
+              <select value={dest} onChange={(e) => {
+                const v = e.target.value;
+                setDest(v);
+                // Blitz-and-return (dest === origin) has no "direct route" — the
+                // via dropdown lists only blitz targets, so a blank `via` would
+                // leave the Move button silently disabled (live report: "Move
+                // shows no reaction"). Default to the (usually only) blitz target.
+                setVia(v === selected && blitzReturnVias.length ? blitzReturnVias[0] : '');
+              }}>
                 <option value="">— destination —</option>
                 {destOptionsFull.map((o) => (
                   <option key={o.tid} value={o.tid}>
