@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar } from 'digital-boardgame-framework/client';
 import type { RankedInfo } from 'digital-boardgame-framework/client';
-import type { Action, GameState, Power, Unit } from '../engine/types';
+import type { Action, GameState, LogEntry, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { ActionPanel, tname } from './ActionPanel';
 import { AiTurnSummary } from './AiTurnSummary';
@@ -383,7 +383,7 @@ function Log({ view }: { view: GameState }) {
     <details style={{ marginTop: 8 }}>
       <summary>Game log ({view.log.length})</summary>
       <div style={{ maxHeight: 200, overflow: 'auto', fontSize: 13, background: '#16202a', padding: 8, borderRadius: 6 }}>
-        {view.log.slice().reverse().map((l, i) => <div key={i}>{l}</div>)}
+        {view.log.slice().reverse().map((l) => <div key={l.seq}>{l.msg ?? l.kind}</div>)}
       </div>
     </details>
   );
@@ -526,21 +526,20 @@ function Center({ children }: { children: React.ReactNode }) {
   return <div style={{ padding: '4rem', textAlign: 'center' }}>{children}</div>;
 }
 
-/** Summarize this turn's weapons-development roll from the log, for the info
- *  dialog: the dice rolled and any breakthroughs developed. */
-function parseTechRoll(log: string[], you: string): string | null {
+/** Summarize this turn's weapons-development roll from the structured log, for
+ *  the info dialog: the dice rolled and any breakthroughs developed. */
+function parseTechRoll(log: LogEntry[], you: string): string | null {
   let i = -1;
   for (let k = log.length - 1; k >= 0; k--) {
-    if (log[k].startsWith(`${you} buys `) && log[k].includes('research dice')) { i = k; break; }
+    if (log[k].kind === 'tech.roll' && log[k].side === you) { i = k; break; }
   }
   if (i < 0) return null;
-  const rolls = log[i].match(/\[([^\]]*)\]/)?.[1] ?? '';
+  const rolls = ((log[i].payload as { rolls?: number[] })?.rolls ?? []).join(', ');
   const pretty = (t: string) => t.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
   const devs: string[] = [];
   for (let k = i + 1; k < log.length; k++) {
-    const m = log[k].match(new RegExp(`^${you} develops (.+)!$`));
-    if (!m) break;
-    devs.push(pretty(m[1]));
+    if (log[k].kind !== 'tech.developed' || log[k].side !== you) break;
+    devs.push(pretty((log[k].payload as { tech: string }).tech));
   }
   return devs.length
     ? `You rolled [${rolls}] — breakthrough! Developed: ${devs.join(', ')}. (Each 6 is a breakthrough.)`

@@ -313,7 +313,10 @@ function moveAir(
     const targets = [...survivors];
     const rolls = rollDice(state, targets.length);
     let hits = rolls.filter((r) => r === 1).length;
-    log(state, `AA fire over ${def(t).name}: ${hits} hit(s) on ${targets.length} plane(s).`);
+    log(state, `AA fire over ${def(t).name}: ${hits} hit(s) on ${targets.length} plane(s).`, {
+      kind: 'combat.aa', side: actor,
+      payload: { territory: t, hits, planes: targets.length, target: 'overflight' },
+    });
     // attacker chooses which planes die (spec §13.11); auto-rule: fighters before bombers
     const order = targets.sort((x, y) => UNITS[x.type].cost - UNITS[y.type].cost);
     for (const victim of order) {
@@ -345,7 +348,9 @@ function moveAir(
 function violateNeutral(state: GameState, t: string, actor: Power): void {
   state.neutrals = state.neutrals.filter((x) => x !== t);
   state.ipcs[actor] = Math.max(0, state.ipcs[actor] - 3);
-  log(state, `${actor} violates neutral ${def(t).name} (3 IPC penalty).`);
+  log(state, `${actor} violates neutral ${def(t).name} (3 IPC penalty).`, {
+    kind: 'neutral.violate', side: actor, payload: { territory: t, penalty: 3 },
+  });
   terr(state, t).owner = actor; // control marker, 0 income (spec §10)
 }
 

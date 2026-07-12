@@ -1,15 +1,24 @@
 // GameAdapter seam — the only file that imports framework types (CLAUDE.md convention).
 // Classic A&A has no hidden information, so viewFor is the identity (spec Phase-0 decision 1).
-import type { GameAdapter, GameResult } from 'digital-boardgame-framework';
+import { upgradeProseLog, type GameAdapter, type GameResult } from 'digital-boardgame-framework';
 import { applyActionWithResult } from './apply';
 import { battleActor } from './combat';
 import { legalActions } from './legal';
 import { TURN_ORDER, SIDE_OF, type Action, type GameState, type Power } from './types';
 
 export const axisAndAlliesAdapter: GameAdapter<GameState, Action, Power> = {
-  schemaVersion: 1,
+  schemaVersion: 2,
 
-  migrate(_raw: unknown, fromVersion: number): GameState {
+  migrate(raw: unknown, fromVersion: number): GameState {
+    if (fromVersion === 1) {
+      // v1 → v2: log was a prose string[]; wrap the lines as kind:'legacy'
+      // structured entries (framework log-format v2) so old games keep rendering.
+      const s = raw as GameState & { log: unknown };
+      const lines = Array.isArray(s.log)
+        ? (s.log as unknown[]).filter((l): l is string => typeof l === 'string')
+        : [];
+      return { ...s, schemaVersion: 2, log: upgradeProseLog<Power>(lines, s.globalTurn ?? 0) };
+    }
     throw new Error(`no migration from schema v${fromVersion}`);
   },
 

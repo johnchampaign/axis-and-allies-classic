@@ -25,7 +25,7 @@ export function createGame(seed: number, ai: Power[] = []): GameState {
 
   const first: Power = TURN_ORDER[0];
   const state: GameState = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     rng: seed >>> 0,
     globalTurn: 0,
     round: 0,
@@ -46,7 +46,7 @@ export function createGame(seed: number, ai: Power[] = []): GameState {
     placedThisTurn: {},
     winner: null,
     winReason: null,
-    log: ['Game start.'],
+    log: [{ seq: 0, turn: 0, phase: 'tech', side: null, kind: 'game.start', msg: 'Game start.' }],
     ai,
   };
   beginTurnSnapshot(state);

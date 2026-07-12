@@ -30,11 +30,16 @@ function logLosses(state: GameState, units: Unit[]): void {
     m.set(u.type, (m.get(u.type) ?? 0) + 1);
   }
   const parts: string[] = [];
+  const losses: { owner: Power; type: string; count: number }[] = [];
   for (const [owner, m] of byOwner) {
     const items = [...m].map(([type, n]) => `${n} ${type}`).join(', '); // "2 infantry" — types read fine uncounted
     parts.push(`${owner} loses ${items}`);
+    for (const [type, count] of m) losses.push({ owner, type, count });
   }
-  log(state, `  ${parts.join('; ')}.`);
+  log(state, `  ${parts.join('; ')}.`, {
+    kind: 'combat.casualties',
+    payload: { territory: state.battle?.territory ?? null, losses },
+  });
 }
 /** Combatant filter: in naval battles, land units present are transport cargo —
  * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
@@ -107,7 +112,10 @@ export function applyStartBattle(
     defenderCasualties: [],
     stage: 'attackerHits',
   };
-  log(state, `Battle begins in ${def(a.territory).name}.`);
+  log(state, `Battle begins in ${def(a.territory).name}.`, {
+    kind: 'combat.begin', side: actor,
+    payload: { territory: a.territory, attacker: actor, amphibious },
+  });
   runRound(state);
   return ok;
 }
@@ -124,7 +132,9 @@ function resolveSBR(state: GameState, t: string, actor: Power): EngineResult {
       const victim = bombers.pop()!;
       ts.units.splice(ts.units.indexOf(victim), 1);
     }
-    if (hits) log(state, `AA fire downs ${hits} bomber(s) over ${def(t).name}.`);
+    if (hits) log(state, `AA fire downs ${hits} bomber(s) over ${def(t).name}.`, {
+      kind: 'combat.aa', payload: { territory: t, hits, target: 'bombers' },
+    });
   }
   const factory = ts.units.find((u) => u.type === 'factory' && isEnemy(u.owner, actor));
   if (bombers.length > 0 && factory) {
@@ -133,7 +143,10 @@ function resolveSBR(state: GameState, t: string, actor: Power): EngineResult {
     const victim = factory.owner;
     const paid = Math.min(dmg, state.ipcs[victim]);
     state.ipcs[victim] -= paid;
-    log(state, `SBR on ${def(t).name}: ${victim} pays ${paid} IPCs.`);
+    log(state, `SBR on ${def(t).name}: ${victim} pays ${paid} IPCs.`, {
+      kind: 'combat.sbr', side: actor,
+      payload: { territory: t, victim, damage: dmg, paid, bombers: bombers.length },
+    });
   }
   // Surviving raiders are done: the SBR is a single pass, then they fly home in
   // noncombat (spec §7). Marking them combatDone stops the leftover bombers from
@@ -157,7 +170,9 @@ function runRound(state: GameState): void {
     if (aa && !ts.aaFired && planes.length > 0) {
       ts.aaFired = true;
       let hits = rollDice(state, planes.length).filter((r) => r === 1).length;
-      if (hits) log(state, `AA fire: ${hits} attacking plane(s) downed.`);
+      if (hits) log(state, `AA fire: ${hits} attacking plane(s) downed.`, {
+        kind: 'combat.aa', payload: { territory: b.territory, hits, target: 'planes' },
+      });
       // attacker chooses (spec §13.11); auto-rule: cheapest first
       const order = [...planes].sort((x, y) => UNITS[x.type].cost - UNITS[y.type].cost);
       const downed: Unit[] = [];
@@ -177,7 +192,10 @@ function runRound(state: GameState): void {
     for (const _ of b.bombardIds) if (rollDice(state, 1)[0] <= 4) hits++;
     if (hits > 0) {
       queueHits(state, 'defender', hits, defenders(state).map((u) => u.id), true);
-      log(state, `Shore bombardment: ${hits} hit(s).`);
+      log(state, `Shore bombardment: ${hits} hit(s).`, {
+        kind: 'combat.bombard', side: b.attacker,
+        payload: { territory: b.territory, ships: b.bombardIds.length, hits },
+      });
     }
   }
 
@@ -209,7 +227,10 @@ function runRound(state: GameState): void {
     atkHits += rollDice(state, dice).filter((r) => r <= val).length;
   }
   if (atkDice > 0) {
-    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkDice} dice, ${atkHits} hit(s).`);
+    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkDice} dice, ${atkHits} hit(s).`, {
+      kind: 'combat.roll', side: b.attacker,
+      payload: { territory: b.territory, round: b.round, role: 'attack', dice: atkDice, hits: atkHits },
+    });
   }
   if (atkHits > 0) {
     const eligible = defenders(state).map((u) => u.id);
@@ -326,7 +347,13 @@ function afterCasualties(state: GameState): void {
   }
   if (defDice > 0) {
     const who = [...new Set(firing.map((u) => u.owner))].join('/');
-    log(state, `Round ${b.round}: ${who} defends — ${defDice} dice, ${subHits + normalHits} hit(s).`);
+    log(state, `Round ${b.round}: ${who} defends — ${defDice} dice, ${subHits + normalHits} hit(s).`, {
+      kind: 'combat.roll',
+      payload: {
+        territory: b.territory, round: b.round, role: 'defend',
+        dice: defDice, hits: subHits + normalHits, subHits, defenders: who,
+      },
+    });
   }
 
   // sub hits cannot kill planes (spec §6.3); attacker's hit units are removed
@@ -432,7 +459,10 @@ export function applyWithdrawSubs(
     ts.units.splice(ts.units.indexOf(u), 1);
     terr(state, a.to).units.push(u);
   }
-  log(state, `${actor} withdraws ${a.unitIds.length} submarine(s).`);
+  log(state, `${actor} withdraws ${a.unitIds.length} submarine(s).`, {
+    kind: 'combat.subWithdraw', side: actor,
+    payload: { territory: b.territory, to: a.to, count: a.unitIds.length },
+  });
   advancePastWithdrawals(state);
   return ok;
 }
@@ -489,7 +519,9 @@ export function applyRetreat(
     ts.units.splice(ts.units.indexOf(u), 1);
     terr(state, a.to).units.push(u);
   }
-  log(state, `${actor} retreats from ${def(b.territory).name}.`);
+  log(state, `${actor} retreats from ${def(b.territory).name}.`, {
+    kind: 'combat.retreat', side: actor, payload: { territory: b.territory, to: a.to },
+  });
   state.battle = null;
   return ok;
 }
@@ -504,20 +536,30 @@ function finishBattle(state: GameState): void {
   if (dfd.length === 0 && atk.length > 0) {
     if (water) {
       state.navalBattlesFought.push(b.territory);
-      log(state, `${b.attacker} clears ${def(b.territory).name}.`);
+      log(state, `${b.attacker} clears ${def(b.territory).name}.`, {
+        kind: 'combat.result', side: b.attacker,
+        payload: { territory: b.territory, outcome: 'attackerClears' },
+      });
     } else {
       const landSurvivors = atk.filter((u) => UNITS[u.type].domain === 'land');
       if (landSurvivors.length > 0) {
         captureTerritory(state, b.territory, b.attacker, landSurvivors);
       } else {
-        log(state, `${b.attacker} wins the air battle but cannot capture ${def(b.territory).name}.`); // spec §6.6
+        log(state, `${b.attacker} wins the air battle but cannot capture ${def(b.territory).name}.`, {
+          kind: 'combat.result', side: b.attacker,
+          payload: { territory: b.territory, outcome: 'airOnlyNoCapture' },
+        }); // spec §6.6
       }
     }
   } else if (water && dfd.length > 0) {
     state.navalBattlesFought.push(b.territory);
-    log(state, `Defenders hold ${def(b.territory).name}.`);
+    log(state, `Defenders hold ${def(b.territory).name}.`, {
+      kind: 'combat.result', payload: { territory: b.territory, outcome: 'defendersHold' },
+    });
   } else {
-    log(state, `Defenders hold ${def(b.territory).name}.`);
+    log(state, `Defenders hold ${def(b.territory).name}.`, {
+      kind: 'combat.result', payload: { territory: b.territory, outcome: 'defendersHold' },
+    });
   }
 
   // attacker units that fought here are done attacking

@@ -1,5 +1,11 @@
 // Core state & action types. Pure data — everything JSON-serializable.
 // Rules citations refer to docs/rules-spec.md (which cites rulebook pages).
+// (GameLogEntry is a plain-data framework type; the adapter remains the only
+// importer of *behavioral* framework types.)
+import type { GameLogEntry } from 'digital-boardgame-framework';
+
+/** Structured game-log entry (framework log-format v2). See docs/log-events.md. */
+export type LogEntry = GameLogEntry<Power>;
 
 export type Power = 'russia' | 'germany' | 'uk' | 'japan' | 'usa';
 export type Side = 'axis' | 'allies';
@@ -104,7 +110,7 @@ export interface Battle {
 export interface PurchaseItem { type: UnitType }
 
 export interface GameState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   rng: number;
   /** Increments every power-turn. */
   globalTurn: number;
@@ -133,7 +139,7 @@ export interface GameState {
   placedThisTurn: Record<string, number>;
   winner: Side | null;
   winReason: string | null;
-  log: string[];
+  log: LogEntry[];
   /** Powers played by the server AI (random legal moves). Set at game creation. */
   ai?: Power[];
   /** Monotonic action counter (one per successfully applied action). Lets the

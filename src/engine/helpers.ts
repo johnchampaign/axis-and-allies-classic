@@ -1,5 +1,5 @@
 // Pure query helpers over GameState. No mutation here except rollDice (rng cursor).
-import { Rng } from 'digital-boardgame-framework';
+import { Rng, appendGameLog } from 'digital-boardgame-framework';
 import { CANAL_EDGES, def, TERRITORIES, UNITS } from './data';
 import {
   CAPITAL_OF, SIDE_OF, type GameState, type Power, type Side, type TerritoryState, type Unit,
@@ -177,9 +177,21 @@ export function removeUnit(state: GameState, id: number): void {
   }
 }
 
-export function log(state: GameState, msg: string): void {
-  state.log.push(msg);
-  if (state.log.length > 400) state.log.splice(0, state.log.length - 400);
+/** Append a structured log entry (framework log-format v2, docs/log-events.md).
+ *  msg-only calls become kind 'note'. Turn/phase are stamped automatically. */
+export function log(
+  state: GameState,
+  msg: string,
+  opts?: { kind?: string; side?: Power | null; payload?: unknown },
+): void {
+  appendGameLog<Power>(state.log, {
+    turn: state.globalTurn,
+    phase: state.phase,
+    side: opts?.side ?? null,
+    kind: opts?.kind ?? 'note',
+    msg,
+    ...(opts?.payload !== undefined ? { payload: opts.payload } : {}),
+  }, 500);
 }
 
 export const allTerritoryEntries = (state: GameState) => Object.entries(state.territories);

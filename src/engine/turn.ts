@@ -53,10 +53,15 @@ export function captureTerritory(
         }
       }
     }
-    log(state, `${actor} liberates ${d.name} for ${original}.`);
+    log(state, `${actor} liberates ${d.name} for ${original}.`, {
+      kind: 'territory.liberate', side: actor, payload: { territory: t, by: actor, for: original },
+    });
   } else {
     ts.owner = actor;
-    log(state, `${actor} captures ${d.name}${landUnits.length ? '' : ' (unoccupied)'}.`);
+    log(state, `${actor} captures ${d.name}${landUnits.length ? '' : ' (unoccupied)'}.`, {
+      kind: 'territory.capture', side: actor,
+      payload: { territory: t, by: actor, from: prevOwner, unoccupied: landUnits.length === 0 },
+    });
   }
 
   // capital capture: seize the victim's IPCs (spec §6.7)
@@ -65,7 +70,9 @@ export function captureTerritory(
       const loot = state.ipcs[p];
       state.ipcs[p] = 0;
       state.ipcs[actor] += loot;
-      log(state, `${actor} captures ${d.name} — seizes ${loot} IPCs from ${p}.`);
+      log(state, `${actor} captures ${d.name} — seizes ${loot} IPCs from ${p}.`, {
+        kind: 'capital.loot', side: actor, payload: { territory: t, by: actor, victim: p, ipcs: loot },
+      });
     }
   }
   checkMilitaryVictory(state);
@@ -97,7 +104,9 @@ export function applySurrender(state: GameState, actor: Power): EngineResult {
   state.winner = SIDE_OF[actor] === 'axis' ? 'allies' : 'axis';
   state.winReason = SIDE_OF[actor] === 'axis' ? 'Axis surrendered' : 'Allies surrendered';
   state.phase = 'gameOver';
-  log(state, `${actor} surrenders — ${state.winner} win.`);
+  log(state, `${actor} surrenders — ${state.winner} win.`, {
+    kind: 'game.surrender', side: actor, payload: { by: actor, winner: state.winner },
+  });
   return ok;
 }
 
@@ -118,14 +127,18 @@ export function applyRollTech(
   state.techRolledThisTurn = true;
   const rolls = rollDice(state, a.dice);
   let breakthroughs = rolls.filter((r) => r === 6).length;
-  log(state, `${actor} buys ${a.dice} research dice: [${rolls.join(', ')}].`);
+  log(state, `${actor} buys ${a.dice} research dice: [${rolls.join(', ')}].`, {
+    kind: 'tech.roll', side: actor, payload: { dice: a.dice, cost, rolls },
+  });
   while (breakthroughs > 0) {
     breakthroughs--;
     if (state.techs[actor].length >= 6) break;
     let tech = TECH_BY_ROLL[rollDice(state, 1)[0] - 1];
     while (state.techs[actor].includes(tech)) tech = TECH_BY_ROLL[rollDice(state, 1)[0] - 1];
     state.techs[actor].push(tech);
-    log(state, `${actor} develops ${tech}!`);
+    log(state, `${actor} develops ${tech}!`, {
+      kind: 'tech.developed', side: actor, payload: { tech },
+    });
   }
   return ok;
 }
@@ -152,7 +165,10 @@ export function applyPurchase(
   if (total > state.ipcs[actor]) return no('cannot afford that order');
   state.ipcs[actor] -= total;
   state.purchases.push(...items);
-  log(state, `${actor} purchases ${items.length} unit(s) for ${total} IPCs.`);
+  log(state, `${actor} purchases ${items.length} unit(s) for ${total} IPCs.`, {
+    kind: 'purchase', side: actor,
+    payload: { order: a.order, count: items.length, total },
+  });
   state.phase = 'combatMove';
   return ok;
 }
@@ -176,7 +192,9 @@ export function applyRocketAttack(
   const dmg = rollDice(state, 1)[0];
   const victim = victimFactory.owner;
   state.ipcs[victim] = Math.max(0, state.ipcs[victim] - dmg);
-  log(state, `${actor} rocket attack on ${def(a.target).name}: ${victim} loses ${dmg} IPCs.`);
+  log(state, `${actor} rocket attack on ${def(a.target).name}: ${victim} loses ${dmg} IPCs.`, {
+    kind: 'tech.rocket', side: actor, payload: { from: a.from, target: a.target, victim, damage: dmg },
+  });
   return ok;
 }
 
@@ -361,9 +379,13 @@ function endTurn(state: GameState, actor: Power): EngineResult {
   if (!capitalHeldByEnemy(state, actor)) {
     const income = productionLevel(state, actor);
     state.ipcs[actor] += income;
-    log(state, `${actor} collects ${income} IPCs.`);
+    log(state, `${actor} collects ${income} IPCs.`, {
+      kind: 'income', side: actor, payload: { power: actor, income, newTotal: state.ipcs[actor] },
+    });
   } else {
-    log(state, `${actor} collects nothing (capital enemy-held).`);
+    log(state, `${actor} collects nothing (capital enemy-held).`, {
+      kind: 'income', side: actor, payload: { power: actor, income: 0, capitalHeld: true },
+    });
   }
 
   state.globalTurn++;
@@ -384,6 +406,8 @@ function endTurn(state: GameState, actor: Power): EngineResult {
   state.current = next;
   state.phase = 'tech';
   beginTurnSnapshot(state);
-  log(state, `— ${next}'s turn (round ${state.round + 1}) —`);
+  log(state, `— ${next}'s turn (round ${state.round + 1}) —`, {
+    kind: 'turn.start', side: next, payload: { power: next, round: state.round + 1 },
+  });
   return ok;
 }

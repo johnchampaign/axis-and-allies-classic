@@ -4,25 +4,32 @@
 // the last segment the player has seen (localStorage, per game), and show any
 // newer AI segments in a dialog when they appear.
 import { useEffect, useRef, useState } from 'react';
-import type { GameState, Power } from '../engine/types';
+import type { GameState, LogEntry, Power } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
 import { POWER_NAME } from './theme';
 
 interface Segment { power: Power; round: number; lines: string[]; key: number }
 
-function parseSegments(log: string[]): Segment[] {
+function parseSegments(log: LogEntry[]): Segment[] {
   const out: Segment[] = [];
   let cur: Segment | null = null;
-  for (const line of log) {
-    const m = line.match(/^— (\w+)'s turn \(round (\d+)\) —$/);
-    if (m && TURN_ORDER.includes(m[1] as Power)) {
+  for (const entry of log) {
+    // Structured marker; legacy (migrated) entries fall back to the prose match.
+    let power: Power | null = null;
+    let round = 0;
+    if (entry.kind === 'turn.start') {
+      const p = entry.payload as { power: Power; round: number };
+      power = p.power; round = p.round;
+    } else if (entry.kind === 'legacy' && entry.msg) {
+      const m = entry.msg.match(/^— (\w+)'s turn \(round (\d+)\) —$/);
+      if (m && TURN_ORDER.includes(m[1] as Power)) { power = m[1] as Power; round = Number(m[2]); }
+    }
+    if (power) {
       if (cur) out.push(cur);
-      const power = m[1] as Power;
-      const round = Number(m[2]);
       cur = { power, round, lines: [], key: round * 10 + TURN_ORDER.indexOf(power) };
       continue;
     }
-    if (cur) cur.lines.push(line);
+    if (cur) cur.lines.push(entry.msg ?? entry.kind);
   }
   if (cur) out.push(cur);
   return out;
