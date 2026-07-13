@@ -123,13 +123,17 @@ export function applyStartBattle(
 function resolveSBR(state: GameState, t: string, actor: Power): EngineResult {
   const ts = terr(state, t);
   let bombers = ts.units.filter((u) => u.owner === actor && u.sbr);
-  // AA fire (spec §7 step 2)
+  // AA fire (spec §7 step 2): one die per raiding bomber, each fired at once per turn.
+  // Bombers already shot at flying in during combat-move overflight are not re-fired at.
   const aa = ts.units.find((u) => u.type === 'aaGun' && isEnemy(u.owner, actor));
-  if (aa && !ts.aaFired) {
-    ts.aaFired = true;
-    const hits = rollDice(state, bombers.length).filter((r) => r === 1).length;
+  const fired = aa ? (ts.aaFiredAt ??= []) : [];
+  const shootAt = bombers.filter((b) => !fired.includes(b.id));
+  if (aa && shootAt.length > 0) {
+    for (const b of shootAt) fired.push(b.id);
+    const hits = rollDice(state, shootAt.length).filter((r) => r === 1).length;
     for (let i = 0; i < hits; i++) {
-      const victim = bombers.pop()!;
+      const victim = shootAt.pop()!;
+      bombers = bombers.filter((b) => b !== victim);
       ts.units.splice(ts.units.indexOf(victim), 1);
     }
     if (hits) log(state, `AA fire downs ${hits} bomber(s) over ${def(t).name}.`, {
@@ -166,9 +170,12 @@ function runRound(state: GameState): void {
   // Round 1, land: AA fire vs attacking planes (spec §6.2 step 2)
   if (b.round === 1 && !water) {
     const aa = ts.units.find((u) => u.type === 'aaGun' && isEnemy(u.owner, b.attacker));
-    const planes = atk.filter(isAir);
-    if (aa && !ts.aaFired && planes.length > 0) {
-      ts.aaFired = true;
+    // Fire once at each attacking plane not already shot at during combat-move overflight
+    // (spec §4.4, §6.2, p.18): one die per plane, no cap on the number of planes.
+    const fired = aa ? (ts.aaFiredAt ??= []) : [];
+    const planes = atk.filter(isAir).filter((p) => !fired.includes(p.id));
+    if (aa && planes.length > 0) {
+      for (const p of planes) fired.push(p.id);
       let hits = rollDice(state, planes.length).filter((r) => r === 1).length;
       if (hits) log(state, `AA fire: ${hits} attacking plane(s) downed.`, {
         kind: 'combat.aa', payload: { territory: b.territory, hits, target: 'planes' },

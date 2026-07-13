@@ -70,8 +70,12 @@ export interface TerritoryState {
   /** Controlling power; null for sea zones and unviolated neutrals. */
   owner: Power | null;
   units: Unit[];
-  /** AA gun in this territory has fired this enemy turn (spec §4.4). */
-  aaFired?: boolean;
+  /** Unit ids the AA gun in this territory has already fired at this enemy turn.
+   *  An AA gun fires once at EACH enemy aircraft per turn (spec §4.4, §6.2, p.13/18):
+   *  tracked per-plane so aircraft arriving in separate move batches are all fired
+   *  at, while a plane already shot at during overflight is not shot at again in the
+   *  battle's AA step. Reset each turn in beginTurnSnapshot. */
+  aaFiredAt?: number[];
 }
 
 export type Phase =

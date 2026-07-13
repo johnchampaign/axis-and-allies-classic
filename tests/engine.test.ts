@@ -61,6 +61,24 @@ describe('movement', () => {
     expectReject(s, { kind: 'move', unitIds: [aa.id], path: ['karelia-ssr', 'east-europe'] }, 'germany', /already moved/);
   });
 
+  it('AA fires at every attacking plane, even across separate move batches (spec §4.4, live report)', () => {
+    // live report: 4 bombers attacked but AA only fired at 2 — the per-territory
+    // "already fired" flag stopped the gun after the first move action's planes.
+    let s = at('combatMove', 'germany');
+    clear(s, 'karelia-ssr');
+    clear(s, 'russia');
+    addUnit(s, 'karelia-ssr', 'aaGun', 'russia');  // lone enemy AA on the flight path
+    addUnit(s, 'russia', 'infantry', 'russia');    // a defender beyond, so it's a real attack
+    const bs = [0, 1, 2, 3].map(() => addUnit(s, 'east-europe', 'bomber', 'germany'));
+    // fly the four bombers in as two separate move actions of two
+    s = apply(s, { kind: 'move', unitIds: [bs[0].id, bs[1].id], path: ['east-europe', 'karelia-ssr', 'russia'] }, 'germany');
+    s = apply(s, { kind: 'move', unitIds: [bs[2].id, bs[3].id], path: ['east-europe', 'karelia-ssr', 'russia'] }, 'germany');
+    // the gun must have fired at all four bombers, not just the first batch
+    const firedAt = s.territories['karelia-ssr'].aaFiredAt ?? [];
+    for (const b of bs) expect(firedAt).toContain(b.id);
+    expect(firedAt.length).toBe(4);
+  });
+
   it('tanks cannot blitz through occupied territory', () => {
     const s = at('combatMove', 'germany');
     const tank = addUnit(s, 'east-europe', 'armor', 'germany');

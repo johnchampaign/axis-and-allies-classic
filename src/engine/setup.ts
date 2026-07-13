@@ -63,7 +63,7 @@ export function beginTurnSnapshot(state: GameState): void {
   state.techRolledThisTurn = false;
   state.rocketsFiredThisTurn = false;
   for (const [t, ts] of Object.entries(state.territories)) {
-    ts.aaFired = false;
+    ts.aaFiredAt = [];
     const d = TERRITORIES[t];
     const hostiles = ts.units.some((u) => SIDE_OF[u.owner] !== SIDE_OF[p]);
     if (d.water ? !hostiles : ts.owner !== null && SIDE_OF[ts.owner] === SIDE_OF[p] && !hostiles) {

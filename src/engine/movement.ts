@@ -302,15 +302,20 @@ function moveAir(
     if (state.neutrals.includes(t)) violateNeutral(state, t, actor);
   }
 
-  // AA overflight fire: each unfired enemy AA territory entered fires at this batch (spec §4.4)
+  // AA overflight fire: every enemy AA territory entered fires once at each plane it
+  // has not already shot at this turn (spec §4.4). Tracking per-plane (not a single
+  // per-territory flag) means planes flown in over several move actions are each fired
+  // at, instead of only the first batch. (live report: 4 bombers attacked, AA fired at 2)
   const survivors = new Set(units);
   for (const t of a.path.slice(1)) {
     const ts = terr(state, t);
     if (def(t).water) continue;
     const aa = ts.units.find((x) => x.type === 'aaGun' && isEnemy(x.owner, actor));
-    if (!aa || ts.aaFired) continue;
-    ts.aaFired = true;
-    const targets = [...survivors];
+    if (!aa) continue;
+    const fired = (ts.aaFiredAt ??= []);
+    const targets = [...survivors].filter((u) => !fired.includes(u.id));
+    if (targets.length === 0) continue;
+    for (const u of targets) fired.push(u.id);
     const rolls = rollDice(state, targets.length);
     let hits = rolls.filter((r) => r === 1).length;
     log(state, `AA fire over ${def(t).name}: ${hits} hit(s) on ${targets.length} plane(s).`, {
