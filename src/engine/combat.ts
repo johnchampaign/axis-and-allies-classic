@@ -215,8 +215,19 @@ function runRound(state: GameState): void {
   const subs = attackers(state).filter((u) => u.type === 'submarine');
   if (water && subs.length > 0) {
     const toHit = state.techs[b.attacker].includes('superSubs') ? 3 : 2;
-    const hits = rollDice(state, subs.length).filter((r) => r <= toHit).length;
+    const rolls = rollDice(state, subs.length);
+    const hits = rolls.filter((r) => r <= toHit).length;
     const eligible = defenders(state).filter((u) => !isAir(u)).map((u) => u.id);
+    // Log the opening salvo even on a miss: subs fire first and are skipped by the
+    // regular-fire loop below, so without this a sub that rolls no hit produces no
+    // log line at all and looks like it never fired (live report).
+    log(state, `Round ${b.round}: ${b.attacker} submarine${subs.length > 1 ? 's' : ''} open fire — ${subs.length} dice [${rolls.join(', ')}], ${hits} hit(s).`, {
+      kind: 'combat.roll', side: b.attacker,
+      payload: {
+        territory: b.territory, round: b.round, role: 'subAttack',
+        dice: subs.length, hits, rolls,
+      },
+    });
     if (hits > 0 && eligible.length > 0) {
       queueHits(state, 'defender', Math.min(hits, eligible.length), eligible, false);
     }
@@ -224,19 +235,20 @@ function runRound(state: GameState): void {
 
   // Attacker regular fire (subs already fired; transports & AA roll nothing)
   let atkHits = 0;
-  let atkDice = 0;
+  const atkFaces: number[] = [];
   for (const u of attackers(state)) {
     if (u.type === 'submarine' && water) continue;
     const val = UNITS[u.type].attack;
     if (val <= 0) continue;
     const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
-    atkDice += dice;
-    atkHits += rollDice(state, dice).filter((r) => r <= val).length;
+    const faces = rollDice(state, dice);
+    atkFaces.push(...faces);
+    atkHits += faces.filter((r) => r <= val).length;
   }
-  if (atkDice > 0) {
-    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkDice} dice, ${atkHits} hit(s).`, {
+  if (atkFaces.length > 0) {
+    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkFaces.length} dice [${atkFaces.join(', ')}], ${atkHits} hit(s).`, {
       kind: 'combat.roll', side: b.attacker,
-      payload: { territory: b.territory, round: b.round, role: 'attack', dice: atkDice, hits: atkHits },
+      payload: { territory: b.territory, round: b.round, role: 'attack', dice: atkFaces.length, hits: atkHits, rolls: atkFaces },
     });
   }
   if (atkHits > 0) {
@@ -341,24 +353,25 @@ function afterCasualties(state: GameState): void {
   const firing = defenders(state); // includes defenderCasualties (still on board)
   let normalHits = 0;
   let subHits = 0;
-  let defDice = 0;
+  const defFaces: number[] = [];
   for (const u of firing) {
     let val = UNITS[u.type].defense;
     if (u.type === 'fighter' && state.techs[u.owner].includes('jetPower')) val = 5;
     if (val <= 0) continue;
     const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
-    defDice += dice;
-    const hits = rollDice(state, dice).filter((r) => r <= val).length;
+    const faces = rollDice(state, dice);
+    defFaces.push(...faces);
+    const hits = faces.filter((r) => r <= val).length;
     if (u.type === 'submarine') subHits += hits;
     else normalHits += hits;
   }
-  if (defDice > 0) {
+  if (defFaces.length > 0) {
     const who = [...new Set(firing.map((u) => u.owner))].join('/');
-    log(state, `Round ${b.round}: ${who} defends — ${defDice} dice, ${subHits + normalHits} hit(s).`, {
+    log(state, `Round ${b.round}: ${who} defends — ${defFaces.length} dice [${defFaces.join(', ')}], ${subHits + normalHits} hit(s).`, {
       kind: 'combat.roll',
       payload: {
         territory: b.territory, round: b.round, role: 'defend',
-        dice: defDice, hits: subHits + normalHits, subHits, defenders: who,
+        dice: defFaces.length, hits: subHits + normalHits, subHits, defenders: who, rolls: defFaces,
       },
     });
   }
