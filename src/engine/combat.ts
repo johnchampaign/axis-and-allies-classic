@@ -430,8 +430,15 @@ function beginRetreatDecision(state: GameState): void {
 export function retreatZones(state: GameState): string[] {
   const b = state.battle!;
   const out = new Set<string>();
+  // Valid retreat destinations are every adjacent, friendly space that ANY
+  // surviving attacker launched from (spec §6.4 / §13.13: "a space any attacker
+  // came from") — including a plane's origin. Air units don't relocate to the
+  // space (applyRetreat flies them home in noncombat), but their launch point is
+  // still somewhere the ground may fall back to. Don't skip air here, or a valid
+  // origin is lost when its only survivor is a fighter (live report: units came
+  // from Caucasus AND Karelia into Ukraine, the Karelia infantry died, and only
+  // Caucasus was offered even though a Karelia-launched fighter survived).
   for (const u of attackers(state)) {
-    if (isAir(u)) continue;
     const o = b.origins[u.id];
     if (!o || !adjacent(o, b.territory)) continue;
     const ts = terr(state, o);
