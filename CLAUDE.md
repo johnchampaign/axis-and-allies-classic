@@ -14,8 +14,15 @@ no UI before the headless soak passes.
    open: `viewFor` is near-identity (no hidden info in Classic).
 2. **Multiplayer-first**: online async is the primary mode; hotseat = one
    browser holding all seat tokens. No "local game" code path.
-3. **AI**: none for launch. RandomAI (framework) drives the soak only. Action
-   vocabulary stays controller-agnostic so an AI seat can be added later.
+3. **AI**: a hand-tuned heuristic in `src/ai/` plays any seat not held by a
+   human — per-power doctrine profiles + one-decision-per-call logic in
+   `heuristic.ts`, round-1 opening book in `openings.ts`, server wiring in
+   `controller.ts` (leaderboard key `ai:axis-and-allies:standard`; bump the key
+   if you change its strength). Tuned against uploaded human-vs-AI game logs.
+   Validate any AI change with `scripts/ai-benchmark.ts` (heuristic vs random,
+   ~95% win bar) and `scripts/ai-tournament.ts` (all-heuristic health: side
+   balance, game length, no stalls). RandomAI (framework) still drives the
+   headless soak. Action vocabulary stays controller-agnostic.
 4. **Supabase**: shared framework project, RLS enabled (non-negotiable).
 5. **Assets/rules**: VASSAL module `Axis&allies_2.5.vmod` (extract to
    `vmod_extracted/`, gitignored — `unzip` it; piece art in `images/`,

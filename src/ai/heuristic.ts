@@ -530,8 +530,12 @@ function combatMove(state: GameState, p: Power): Action | null {
         return (mts.owner !== null && isEnemy(mts.owner, p)) ||
           mts.units.some((u) => isEnemy(u.owner, p) && isCombat(u));
       });
-      const spare = movable.length > (bordersEnemy ? 1 : 0) ? movable[0] : null;
-      if (!spare) continue;
+      if (movable.length <= (bordersEnemy ? 1 : 0)) continue;
+      // send cheap infantry to grab an undefended territory; keep armor (attack 3,
+      // cost 5) massed for real attacks instead of parking it alone in a rear grab
+      // where 2 inf + a fighter destroy it for a losing-for-us trade (live report:
+      // "leaving Fighters and/or Armors alone ... is really bad play").
+      const spare = movable.find((u) => u.type === 'infantry') ?? movable[0];
       return { kind: 'move', unitIds: [spare.id], path: [t, n] };
     }
   }
@@ -752,13 +756,27 @@ function noncombat(state: GameState, p: Power): Action | null {
       if (safeHere) continue;
       const budget = airRange(state, u) - u.movesUsed;
       if (budget <= 0) continue;
-      // nearest friendly-at-start landing
+      // Land somewhere SAFE, not merely the first friendly square found: a fighter
+      // (cost 12) parked in an exposed forward territory is destroyed by a cheap
+      // 2-inf + air counterattack (live report named fighters left alone in
+      // Ukraine/Caucasus). Rank reachable friendly landings — avoid squares with
+      // enemy ground next door, prefer deeper rear and an existing garrison — but
+      // always land somewhere (stranded air is lost, spec §4.3).
       const candidates = state.turnStartFriendly
         .filter((c) => !def(c).water && isFriendlySpace(state, c, p));
+      let bestLand: { path: string[]; safety: number } | null = null;
       for (const c of candidates) {
         const path = airPath(state, t, c, budget, true);
-        if (path) return { kind: 'move', unitIds: [u.id], path };
+        if (!path) continue;
+        const adjacentEnemy = def(c).connections.some((m) =>
+          !def(m).water && terr(state, m).units.some((x) =>
+            isEnemy(x.owner, p) && isCombat(x) && UNITS[x.type].domain === 'land'));
+        const garrison = terr(state, c).units.some((x) =>
+          x.owner === p && isCombat(x) && UNITS[x.type].domain === 'land');
+        const safety = distanceToEnemy(state, c, p) + (adjacentEnemy ? -50 : 0) + (garrison ? 3 : 0);
+        if (!bestLand || safety > bestLand.safety) bestLand = { path, safety };
       }
+      if (bestLand) return { kind: 'move', unitIds: [u.id], path: bestLand.path };
     }
   }
   // 1b) carrier rescue: sail an idle carrier to a sea zone where own fighters
