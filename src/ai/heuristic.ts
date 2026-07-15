@@ -385,8 +385,13 @@ function purchase(state: GameState, p: Power): Action {
   // never buy what can't be placed (live report: blockaded Japan bought
   // transports every turn and forfeited them — its only port was enemy-held)
   if (state.turnStartFactories.length === 0) return { kind: 'endPhase' };
+  // A usable port is OPEN water — a sea zone that connects onward to other sea
+  // zones. A landlocked lake (the Caspian) is a dead end: transports built there
+  // can never reach a front, so don't count it as sea-placeable (live report:
+  // Russia kept buying transports and stranding them on the Caspian).
+  const openSea = (z: string) => def(z).water && def(z).connections.some((n) => def(n).water);
   const seaPlaceable = state.turnStartFactories.some((t) =>
-    def(t).connections.some((z) => def(z).water && !isEnemyOccupied(state, z, p)));
+    def(t).connections.some((z) => openSea(z) && !isEnemyOccupied(state, z, p)));
   // don't buy what can't deploy: a huge home stockpile means production is
   // outpacing sealift/fronts — bank the cash for land units, but KEEP buying
   // transports, which are the only thing that drains the pile (live report:
@@ -919,6 +924,17 @@ function mobilize(state: GameState, p: Power): Action {
     if (a.seaZone) {
       const openWater = def(a.seaZone).connections.some((n) => def(n).water);
       if (!openWater) score -= 100; // a lake: last resort only
+      // Don't drop an UNESCORTED transport next to enemy air / warships that will
+      // sink it for free next turn (live report: UK/Russia parked transports in
+      // the East Mediterranean where Axis fighters picked them off every round).
+      if (a.type === 'transport') {
+        const escorted = terr(state, a.seaZone).units.some((u) =>
+          u.owner === p && u.type !== 'transport' && UNITS[u.type].domain === 'sea');
+        const threatened = def(a.seaZone).connections.some((n) =>
+          terr(state, n).units.some((u) => isEnemy(u.owner, p) && isCombat(u) &&
+            (UNITS[u.type].domain === 'air' || UNITS[u.type].domain === 'sea')));
+        if (threatened && !escorted) score -= 60;
+      }
     }
     // don't keep stuffing an overflowing capital (log: 161 units in Moscow)
     if (a.territory === CAPITAL_OF[p] && !a.seaZone && capPile > 35) score -= 50;
