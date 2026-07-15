@@ -15,6 +15,14 @@ const no = (reason: string): EngineResult => ({ ok: false, reason });
 const isAir = (u: Unit) => UNITS[u.type].domain === 'air';
 const isCombatUnit = (u: Unit) => u.type !== 'factory' && u.type !== 'aaGun';
 
+/** "2 infantry, 1 armor, 2 fighter" — combatant roster for the battle-start log
+ *  (live request: show who is fighting, not just the dice). */
+function roster(units: Unit[]): string {
+  const counts = new Map<string, number>();
+  for (const u of units) counts.set(u.type, (counts.get(u.type) ?? 0) + 1);
+  return [...counts].map(([t, n]) => `${n} ${t}`).join(', ') || 'nothing';
+}
+
 function battleTs(state: GameState) { return terr(state, state.battle!.territory); }
 
 /** Plain-language casualty line so players can see exactly what they lost each
@@ -87,12 +95,17 @@ export function applyStartBattle(
   // shore-bombardment support: attacker battleships in adjacent zones that fought no naval battle
   // this turn and are part of the assault (auto-included; spec §5.4 step 3)
   const bombardIds: number[] = [];
+  let bombardForfeitZone: string | null = null; // a battleship was present but a naval battle forfeited its shot
   if (amphibious && !def(a.territory).water) {
     for (const zone of def(a.territory).connections) {
-      if (!def(zone).water || state.navalBattlesFought.includes(zone)) continue;
-      for (const u of terr(state, zone).units) {
-        if (u.type === 'battleship' && u.owner === actor) bombardIds.push(u.id);
-      }
+      if (!def(zone).water) continue;
+      const bbs = terr(state, zone).units.filter((u) => u.type === 'battleship' && u.owner === actor);
+      if (bbs.length === 0) continue;
+      // shore bombardment is forfeited if a naval battle was fought in that zone
+      // this turn (spec §5.4) — clearing the sea zone counts (live report: player
+      // cleared the zone, then wondered why the battleship didn't bombard)
+      if (state.navalBattlesFought.includes(zone)) { bombardForfeitZone = zone; continue; }
+      for (const u of bbs) bombardIds.push(u.id);
     }
   }
 
@@ -112,10 +125,25 @@ export function applyStartBattle(
     defenderCasualties: [],
     stage: 'attackerHits',
   };
-  log(state, `Battle begins in ${def(a.territory).name}.`, {
+  const atkUnits = ts.units.filter((u) => u.owner === actor && isCombatUnit(u));
+  const defUnits = ts.units.filter((u) => isEnemy(u.owner, actor) && isCombatUnit(u));
+  const defWho = [...new Set(defUnits.map((u) => u.owner))].join('/') || 'defender';
+  log(state, `Battle begins in ${def(a.territory).name} — ${actor} attacks with ${roster(atkUnits)} vs ${defWho} with ${roster(defUnits)}.`, {
     kind: 'combat.begin', side: actor,
-    payload: { territory: a.territory, attacker: actor, amphibious },
+    payload: {
+      territory: a.territory, attacker: actor, amphibious,
+      attackers: roster(atkUnits), defenders: roster(defUnits), defenderSide: defWho,
+    },
   });
+  // Tell the player WHY there was no support shot when a battleship was on hand
+  // but a naval battle in its zone forfeited it — otherwise it just silently
+  // doesn't happen (live report: "warship there, but no shore bombardment").
+  if (bombardIds.length === 0 && bombardForfeitZone) {
+    log(state, `Shore bombardment forfeited — a naval battle was fought in ${def(bombardForfeitZone).name} this turn (spec §5.4).`, {
+      kind: 'combat.bombardForfeit', side: actor,
+      payload: { territory: a.territory, zone: bombardForfeitZone },
+    });
+  }
   runRound(state);
   return ok;
 }
