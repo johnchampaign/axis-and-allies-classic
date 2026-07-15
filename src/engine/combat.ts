@@ -469,6 +469,12 @@ export function retreatZones(state: GameState): string[] {
   for (const u of attackers(state)) {
     const o = b.origins[u.id];
     if (!o || !adjacent(o, b.territory)) continue;
+    // Retreat only to a space of the battle's OWN domain: ships fall back to
+    // water, ground to land. Air origins are included above so ground can retreat
+    // to a fighter's launch point in a land battle — but that same inclusion must
+    // NOT offer a fighter's LAND origin as a retreat zone for a NAVAL battle, or a
+    // surviving ship gets sent onto land (benchmark crash + corrupt state).
+    if (def(o).water !== def(b.territory).water) continue;
     const ts = terr(state, o);
     if (ts.units.some((x) => isEnemy(x.owner, b.attacker))) continue;
     if (!def(b.territory).water && state.neutrals.includes(o)) continue;
