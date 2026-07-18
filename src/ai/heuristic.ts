@@ -439,6 +439,20 @@ function purchase(state: GameState, p: Power): Action {
       && !hasRocketBattery(state, p) && canSiteRocketBattery(state, p)) {
     buy('aaGun', 1);
   }
+  // Bottled up: no complex we can put ships in, and no complex with a land route
+  // to any enemy — so every ground unit bought is a statue. Live report: with the
+  // North Sea German-held the UK kept buying infantry until 80 of them sat in
+  // London doing nothing while Russia faced Germany alone. Aircraft are the only
+  // pieces that deploy themselves off a shut-in island: fighters (move 4) can
+  // break the fleet that closed the port and still defend the capital at 4,
+  // bombers (move 6) reach the enemy's factories. Buy air until the lanes reopen.
+  const landFront = state.turnStartFactories.some((t) => distanceToEnemyByLand(state, t, p) < 99);
+  if (!seaPlaceable && !landFront && cash >= UNITS.fighter.cost) {
+    if (cash >= UNITS.bomber.cost + UNITS.fighter.cost) buy('bomber', 1); // never crowds out a fighter
+    buy('fighter', 99);
+    if (homePile < 35) buy('infantry', 99); // small change still buys home defence
+    if (Object.keys(order).length > 0) return { kind: 'purchase', order };
+  }
   if (homePile > 35) {
     // The capital is clogged: production is outrunning logistics. Don't keep
     // stuffing the capital (game-log lesson: 161 units parked in Moscow), but
