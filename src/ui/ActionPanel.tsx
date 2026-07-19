@@ -484,6 +484,19 @@ function MovePanel({
     return destOptions;
   }, [destOptions, armorBlitz, blitzReturnVias, selected]);
 
+  // The dropdowns keep their state across selection changes, so a value chosen
+  // for one group can survive into the next one and silently corrupt its move.
+  // Reported case: a tank blitzes Libya→French Eq. Africa→Egypt, then infantry
+  // in Libya are sent to the SAME destination — re-picking Egypt fires no change
+  // event, so the stale `via` was still applied and the engine rejected the move
+  // as "infantry cannot move 2" until the page was reloaded. Always drive the
+  // move off what is actually on offer right now; stale state then self-corrects
+  // instead of leaking into the action.
+  const effDest = destOptionsFull.some((o) => o.tid === dest) ? dest : '';
+  const effVia = viaOptions.includes(via) ? via : '';
+  const sbrOffered = phase === 'combatMove' && chosen.length > 0 && chosen.every((u) => u.type === 'bomber');
+  const effSbr = sbrOffered && sbr;
+
   // transports in adjacent sea zones we could load onto
   // bulk loading: distribute the chosen land units across a zone's transports
   // (2 infantry per boat, armor/AA need an empty one — no mixing in Classic)
@@ -550,7 +563,7 @@ function MovePanel({
           <div>{tname(selected)} — {chosen.length} unit(s) selected.</div>
           {chosen.length > 0 && (
             <div>
-              <select value={dest} onChange={(e) => {
+              <select value={effDest} onChange={(e) => {
                 const v = e.target.value;
                 setDest(v);
                 // Blitz-and-return (dest === origin) has no "direct route" — the
@@ -567,20 +580,20 @@ function MovePanel({
                 ))}
               </select>
               {viaOptions.length > 0 && (
-                <select value={via} onChange={(e) => setVia(e.target.value)} style={{ marginLeft: 6 }}
+                <select value={effVia} onChange={(e) => setVia(e.target.value)} style={{ marginLeft: 6 }}
                   title="Blitz through an empty enemy territory (captured in passing) on the way to the target">
-                  {dest !== selected && <option value="">direct route</option>}
+                  {effDest !== selected && <option value="">direct route</option>}
                   {viaOptions.map((m) => (
                     <option key={m} value={m}>via {tname(m)}</option>
                   ))}
                 </select>
               )}
-              {phase === 'combatMove' && chosen.every((u) => u.type === 'bomber') && (
+              {sbrOffered && (
                 <label style={{ marginLeft: 8 }}>
-                  <input type="checkbox" checked={sbr} onChange={(e) => setSbr(e.target.checked)} /> SBR
+                  <input type="checkbox" checked={effSbr} onChange={(e) => setSbr(e.target.checked)} /> SBR
                 </label>
               )}
-              <button style={primary} disabled={!dest || (dest === selected && !via)}
+              <button style={primary} disabled={!effDest || (effDest === selected && !effVia)}
                 onClick={() => {
                   // one engine move per domain (mixed selections split automatically).
                   // Neutrals are always avoided: land can never pass through them and
@@ -588,16 +601,16 @@ function MovePanel({
                   const moves: Action[] = [];
                   for (const [d, units] of byDomain) {
                     // honour an explicit blitz waypoint for the land group
-                    const path = via && d === 'land'
-                      ? [selected, via, dest]
+                    const path = effVia && d === 'land'
+                      ? [selected, effVia, effDest]
                       : shortestPath(
-                          selected, dest, view.neutrals, d,
+                          selected, effDest, view.neutrals, d,
                           d === 'air' ? new Set<string>() : hostileSpaces,
                         );
                     if (!path) { return; }
                     moves.push({
                       kind: 'move', unitIds: units.map((u) => u.id), path,
-                      ...(sbr && d === 'air' ? { sbr: true } : {}),
+                      ...(effSbr && d === 'air' ? { sbr: true } : {}),
                     });
                   }
                   act(moves);
