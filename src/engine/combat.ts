@@ -446,12 +446,24 @@ function endOfRound(state: GameState): void {
 function beginRetreatDecision(state: GameState): void {
   const b = state.battle!;
   // amphibious land battles are fights to the death (spec §5.4); also auto-continue when
-  // no retreat destination exists
-  if ((b.amphibious && !def(b.territory).water) || retreatZones(state).length === 0) {
+  // no retreat destination exists AND there is a piece that would have to fall back.
+  const stuck = retreatZones(state).length === 0 && !airOnlyAttack(state);
+  if ((b.amphibious && !def(b.territory).water) || stuck) {
     runRound(state);
     return;
   }
   b.stage = 'retreatDecision';
+}
+
+/** True when every surviving attacker is an aircraft. Planes never occupy the retreat
+ * space — they simply break off and land in non-combat movement (spec §6.4) — so the
+ * attacker may ALWAYS withdraw, even with no legal ground/naval fallback space.
+ * Live report: US attacked a sea zone with 2 warships + 2 fighters, lost both ships,
+ * and was never offered a retreat because the fighters' land origins are filtered out
+ * of a naval battle's retreat zones — the surviving planes were forced to fight on. */
+export function airOnlyAttack(state: GameState): boolean {
+  const atk = attackers(state);
+  return atk.length > 0 && atk.every(isAir);
 }
 
 /** Legal retreat spaces: adjacent origins of surviving attackers, not enemy-occupied (spec §6.4). */
@@ -573,7 +585,12 @@ export function applyRetreat(
   const b = state.battle;
   if (!b || b.stage !== 'retreatDecision') return no('no retreat decision pending');
   if (actor !== b.attacker) return no('only the attacker retreats');
-  if (!retreatZones(state).includes(a.to)) return no('must retreat to one space attackers came from');
+  // An all-air attack breaks off in place: `to` is the battle space itself, because the
+  // planes don't move there — they land in non-combat movement (spec §6.4).
+  const breakOff = airOnlyAttack(state) && a.to === b.territory;
+  if (!breakOff && !retreatZones(state).includes(a.to)) {
+    return no('must retreat to one space attackers came from');
+  }
   const ts = battleTs(state);
   for (const u of attackers(state)) {
     if (isAir(u)) { u.combatDone = true; continue; } // planes fly home in noncombat (spec §6.4)

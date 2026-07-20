@@ -1,7 +1,7 @@
 // Representative legalActions (spec for adapter contract: legalActions is a SUBSET;
 // tryApplyAction/the engine is the legality authority). Every returned action must be
 // individually legal, and the list is never empty while the game is live.
-import { battleActor, defenderSubZones, retreatZones } from './combat';
+import { airOnlyAttack, battleActor, defenderSubZones, retreatZones } from './combat';
 import { def, UNITS } from './data';
 import {
   airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy,
@@ -70,7 +70,10 @@ function battleActions(state: GameState, actor: Power): Action[] {
   }
   // retreatDecision
   out.push({ kind: 'continueBattle' });
-  for (const z of retreatZones(state)) out.push({ kind: 'retreat', to: z });
+  // All-air attacks break off in place (the planes land in noncombat), so the retreat
+  // space is meaningless — offer the single break-off option instead of a zone list.
+  if (airOnlyAttack(state)) out.push({ kind: 'retreat', to: b.territory });
+  else for (const z of retreatZones(state)) out.push({ kind: 'retreat', to: z });
   return out;
 }
 

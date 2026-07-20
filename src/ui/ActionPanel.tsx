@@ -777,7 +777,7 @@ function BattlePanel({
         <div>
           {legal.map((a, i) => (
             <button key={i} style={a.kind === 'continueBattle' ? primary : btn} disabled={busy} onClick={() => act(a)}>
-              {labelBattleAction(a)}
+              {labelBattleAction(a, b.territory)}
             </button>
           ))}
         </div>
@@ -786,10 +786,14 @@ function BattlePanel({
   );
 }
 
-function labelBattleAction(a: Action): string {
+function labelBattleAction(a: Action, battleTerritory: string): string {
   switch (a.kind) {
     case 'continueBattle': return 'Fight another round';
-    case 'retreat': return `Retreat to ${tname(a.to)}`;
+    // an all-air attack retreats "to" the battle space — the planes just break off and
+    // land in noncombat movement, so name the action for what it actually does
+    case 'retreat': return a.to === battleTerritory
+      ? 'Break off the attack (planes land later)'
+      : `Retreat to ${tname(a.to)}`;
     case 'pass': return 'Keep subs in the fight';
     case 'withdrawSubs': return `Withdraw subs to ${tname(a.to)}`;
     case 'chooseCasualties': return 'Choose casualties';

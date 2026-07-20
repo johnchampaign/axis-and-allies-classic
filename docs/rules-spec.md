@@ -221,6 +221,7 @@ No territory changes hands from naval combat — fleets are only diminished (p. 
 - Cannot retreat to a space no attacker came from (p. 18).
 - Amphibious-assault land units never retreat (§5.4); a lone transport in battle must endure one round of fire before retreating (p. 16–17).
 - Planes that "retreat" simply end the battle and land in non-combat movement as usual (engine: retreating air units are not bound to the single retreat territory; they land per §4.3 — the retreat-to-one-space rule governs land/naval pieces; the must-land rules p. 21 govern aircraft).
+- Corollary: when **every** surviving attacker is an aircraft, there is no piece that must fall back, so the withdrawal is always available even if no legal retreat space exists (e.g. a naval battle whose only survivors are fighters launched from land). The engine offers a single "break off" option in that case; the planes stay put until non-combat movement flies them to a legal landing spot. (Live report: US attacked Hawaii Sea Zone with warships + 2 fighters, lost both ships, and was never offered the retreat.)
 
 ### 6.5 Submarine withdrawal (p. 17, 19; FAQ p. 2)
 
