@@ -321,8 +321,14 @@ export function pendingBattleSpaces(state: GameState): string[] {
     );
     if (mine.length === 0) continue;
     const sbr = mine.some((u) => u.sbr);
+    // Exclude combatDone ENEMIES too (mirror the battle's fights() filter): a
+    // retreated enemy plane "flying home" cannot fight, so a space holding only
+    // such a plane must not demand a battle the machinery then refuses to fight —
+    // that mismatch livelocked the AI (startBattle → instant "Defenders hold" →
+    // still pending → forever). The stray plane resolves on its owner's turn
+    // (flags reset; it flies off or crashes under normal landing rules).
     const enemies = ts.units.filter(
-      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && u.type !== 'aaGun',
+      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && u.type !== 'aaGun' && !u.combatDone,
     );
     if (sbr || enemies.length > 0) out.push(t);
   }
