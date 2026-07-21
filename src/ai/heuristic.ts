@@ -426,6 +426,26 @@ function purchase(state: GameState, p: Power): Action {
     ));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
   }
+  // Escorts: a transport fleet without warships is free kills for enemy air
+  // (live reports: 41% of AI transports sat unescorted+threatened at r30; every
+  // power averaged ~0-1 warships while running boats — "Japan needs a fleet").
+  // Keep roughly 1 warship per 3 transports afloat; battleships when rich (they
+  // also shore-bombard), subs as the cheap screen otherwise.
+  if (seaPlaceable) {
+    const trn = myTransportCount(state, p);
+    if (trn > 0) {
+      let warships = 0;
+      for (const ts2 of Object.values(state.territories)) {
+        warships += ts2.units.filter((u) =>
+          u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport').length;
+      }
+      const want = Math.ceil(trn / 3);
+      if (warships < want) {
+        if (cash >= UNITS.battleship.cost + 16) buy('battleship', 1); // rich: bombard support too
+        else buy('submarine', Math.min(2, want - warships));
+      }
+    }
+  }
   // a rich power plants forward complexes instead of ferrying everything from
   // home (the real fix for stockpiled cash — live: USSR banked 263, Japan 60,
   // both at the fleet cap). Max 4 new complexes, matching the physical set.
@@ -821,6 +841,31 @@ function noncombat(state: GameState, p: Power): Action | null {
       if (isEnemyOccupied(state, z, p)) continue;
       return { kind: 'move', unitIds: [carrier.id], path: direct ? [cz, z] : [cz, mid!, z] };
     }
+  }
+  // 1c) escort duty: an idle warship in a zone with no friendly transports sails
+  // to the nearest zone holding UNESCORTED own transports — a screen only works
+  // if it sits WITH the boats (live reports: single transports left as free kills
+  // for enemy air; "Japan needs a fleet"). One warship per call; stateless.
+  for (const [wz, wts] of Object.entries(state.territories)) {
+    if (!def(wz).water) continue;
+    const warship = wts.units.find((u) =>
+      u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport' &&
+      !u.movedPhase && !u.fought);
+    if (!warship) continue;
+    if (wts.units.some((u) => u.owner === p && u.type === 'transport')) continue; // already escorting
+    const parents = seaParents(state, wz, p);
+    let best: string[] | null = null;
+    for (const [tz, tts] of Object.entries(state.territories)) {
+      if (!def(tz).water || tz === wz) continue;
+      const hasTrn = tts.units.some((u) => u.owner === p && u.type === 'transport');
+      if (!hasTrn) continue;
+      const escorted = tts.units.some((u) =>
+        u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport');
+      if (escorted) continue;
+      const path = seaPathTo(parents, wz, tz);
+      if (path && path.length >= 2 && (!best || path.length < best.length)) best = path;
+    }
+    if (best) return { kind: 'move', unitIds: [warship.id], path: best.slice(0, Math.min(3, best.length)) };
   }
   // 2) defensive powers under threat rally everything toward the capital
   const prof = PROFILES[p];
