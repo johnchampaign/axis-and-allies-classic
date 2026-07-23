@@ -165,7 +165,17 @@ export function applyPurchase(
   if (total > state.ipcs[actor]) return no('cannot afford that order');
   state.ipcs[actor] -= total;
   state.purchases.push(...items);
-  log(state, `${actor} purchases ${items.length} unit(s) for ${total} IPCs.`, {
+  // Name the units bought, not just a count — on a real board everyone can see
+  // a player's new pieces the whole turn; the log line is where a remote player
+  // reads the same information (live report: "I sometimes miss to see what the
+  // purchase was"). Same "N type, N type" shape as the casualty log.
+  const breakdown = Object.entries(a.order)
+    .filter(([, n]) => (n ?? 0) > 0)
+    .map(([t, n]) => `${n} ${t}`)
+    .join(', ');
+  log(state, breakdown
+    ? `${actor} purchases ${breakdown} for ${total} IPCs.`
+    : `${actor} makes no purchases.`, {
     kind: 'purchase', side: actor,
     payload: { order: a.order, count: items.length, total },
   });
