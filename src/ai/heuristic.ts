@@ -969,8 +969,15 @@ function stepTowardEnemy(state: GameState, from: string, p: Power): string | nul
 // --- mobilize ---
 function mobilize(state: GameState, p: Power): Action {
   const legal = legalActions(state, p);
-  const places = legal.filter((a): a is Extract<Action, { kind: 'place' }> => a.kind === 'place');
+  let places = legal.filter((a): a is Extract<Action, { kind: 'place' }> => a.kind === 'place');
   if (places.length === 0) return { kind: 'endPhase' };
+  // Constrained-first: place SEA units before land units. Ships need a coastal
+  // factory with an open zone (often exactly one); land can use any factory. If
+  // cheap infantry eats a limited port-factory's capacity first, the ships are
+  // forfeited (live report: Germany lost 2 bought transports — 16 IPC — because
+  // 2 infantry filled Karelia, its only open port, before the boats placed).
+  const seaPlaces = places.filter((a) => !!a.seaZone);
+  if (seaPlaces.length > 0) places = seaPlaces;
   // score placements: units near the enemy; factories ALSO by income (a 1-IPC
   // complex builds 1 unit/turn — live probe put one in Evenki); ships never
   // into landlocked seas (live probe launched a transport onto the Caspian)
