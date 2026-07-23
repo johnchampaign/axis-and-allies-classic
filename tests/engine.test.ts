@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { chooseAction } from '../src/ai/heuristic';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
+import { retreatZones } from '../src/engine/combat';
 import { createGame } from '../src/engine/setup';
 import { beginTurnSnapshot } from '../src/engine/setup';
 import { pendingBattleSpaces } from '../src/engine/turn';
@@ -246,6 +247,36 @@ describe('combat', () => {
     // combat phase can now be ended (no unresolved battles)
     s = apply(s, { kind: 'endPhase' }, 'germany');
     expect(s.phase).toBe('noncombat');
+  });
+
+  it('offers every launch point of the force, even one whose own units all died (spec §6.4, 3e p.4)', () => {
+    // Live report (Japan, India): attacked from Sinkiang AND French Indo China;
+    // the French-Indo-China units were all killed, so only Sinkiang was offered.
+    // Rules: the surviving force retreats together to ONE space "from which any
+    // one of the attacking units came" — both launch points must be offered.
+    let s = at('combat', 'japan');
+    for (const t of ['india', 'sinkiang', 'french-indo-china']) clear(s, t);
+    s.territories['sinkiang'].owner = 'japan';
+    s.territories['french-indo-china'].owner = 'japan';
+    s.territories['india'].owner = 'uk';
+    addUnit(s, 'india', 'infantry', 'uk');                    // defender holds
+    // survivor came from Sinkiang; the French-Indo-China unit is already dead (its
+    // id survives only in the battle's origin snapshot, as it would after casualties)
+    const inf = addUnit(s, 'india', 'infantry', 'japan', { fought: true, origin: 'sinkiang' });
+    const deadFicId = 8123;
+    s.battle = {
+      territory: 'india', attacker: 'japan', round: 1,
+      origins: { [inf.id]: 'sinkiang', [deadFicId]: 'french-indo-china' },
+      amphibious: false, bombardIds: [], pendingHits: [], defenderCasualties: [],
+      stage: 'retreatDecision',
+    };
+    const zones = retreatZones(s);
+    expect(zones).toContain('sinkiang');
+    expect(zones).toContain('french-indo-china');             // the reported gap
+    // and the retreat to the dead-unit origin is actually legal
+    s = apply(s, { kind: 'retreat', to: 'french-indo-china' }, 'japan');
+    expect(s.battle).toBeNull();
+    expect(s.territories['french-indo-china'].units.some((u) => u.id === inf.id)).toBe(true);
   });
 });
 

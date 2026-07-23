@@ -466,26 +466,30 @@ export function airOnlyAttack(state: GameState): boolean {
   return atk.length > 0 && atk.every(isAir);
 }
 
-/** Legal retreat spaces: adjacent origins of surviving attackers, not enemy-occupied (spec §6.4). */
+/** Legal retreat spaces: adjacent launch points of the ATTACKING FORCE, not enemy-occupied (spec §6.4). */
 export function retreatZones(state: GameState): string[] {
   const b = state.battle!;
   const out = new Set<string>();
-  // Valid retreat destinations are every adjacent, friendly space that ANY
-  // surviving attacker launched from (spec §6.4 / §13.13: "a space any attacker
-  // came from") — including a plane's origin. Air units don't relocate to the
-  // space (applyRetreat flies them home in noncombat), but their launch point is
-  // still somewhere the ground may fall back to. Don't skip air here, or a valid
-  // origin is lost when its only survivor is a fighter (live report: units came
-  // from Caucasus AND Karelia into Ukraine, the Karelia infantry died, and only
-  // Caucasus was offered even though a Karelia-launched fighter survived).
-  for (const u of attackers(state)) {
-    const o = b.origins[u.id];
+  // Valid retreat destinations are every adjacent, friendly space that ANY of
+  // the attacking units came from — spec §6.4 / §13.13 and 3e p.4 item 04: "All
+  // attacking units must retreat together BACK to one adjacent friendly territory
+  // from which any one of the attacking units came." The force consolidates into
+  // ONE space, so the destination is a property of where the FORCE launched from,
+  // not of which specific units happen to still be alive. Iterate b.origins (the
+  // battle-start snapshot of every attacker's launch space, casualties included),
+  // NOT just current survivors — otherwise a launch point is lost the moment its
+  // own units all die, even though the rest of the force may legally fall back
+  // there. (Live report: Japan attacked India from Sinkiang AND French Indo China;
+  // the units from one of them were all killed, so only the other was offered.
+  // Earlier fix 043685c added a fighter's launch point but still required ≥1
+  // survivor from it — this closes the "all launch points" gap it named.)
+  for (const o of Object.values(b.origins)) {
     if (!o || !adjacent(o, b.territory)) continue;
     // Retreat only to a space of the battle's OWN domain: ships fall back to
-    // water, ground to land. Air origins are included above so ground can retreat
-    // to a fighter's launch point in a land battle — but that same inclusion must
-    // NOT offer a fighter's LAND origin as a retreat zone for a NAVAL battle, or a
-    // surviving ship gets sent onto land (benchmark crash + corrupt state).
+    // water, ground to land. Land launch points (e.g. a fighter's) are kept so
+    // ground can retreat there in a land battle — but that must NOT offer a
+    // fighter's LAND origin as a retreat zone for a NAVAL battle, or a surviving
+    // ship gets sent onto land (benchmark crash + corrupt state).
     if (def(o).water !== def(b.territory).water) continue;
     const ts = terr(state, o);
     if (ts.units.some((x) => isEnemy(x.owner, b.attacker))) continue;
