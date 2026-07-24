@@ -17,7 +17,22 @@ export function makeClient(
   const base = `/api/games/${encodeURIComponent(gameId)}`;
   const q = `?t=${encodeURIComponent(token)}`;
   async function j<T>(r: Response): Promise<T> {
-    const data = await r.json();
+    // Read the body as text first so a non-JSON response (a transient
+    // Cloudflare/Workers error page, an empty 5xx, a proxy timeout) surfaces an
+    // actionable message instead of a cryptic "JSON.parse: unexpected character
+    // at line 1 column 1". A reload almost always recovers — the server state is
+    // fine, the client just lost one response.
+    const text = await r.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new Error(
+        r.ok
+          ? 'The server sent an unexpected response. Please reload the page and try again.'
+          : `The server had a hiccup (HTTP ${r.status}). Please reload the page and try again.`,
+      );
+    }
     if (!r.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`);
     return data as T;
   }
