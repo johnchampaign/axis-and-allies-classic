@@ -4,7 +4,8 @@
 // plain (framework decisions.md: a ~300-line heuristic beats random ~95%):
 //   - no weapons development; spend income on infantry/armor (+ a fighter when rich)
 //   - attack only with a comfortable strength edge; grab walkovers
-//   - casualties cheapest-first; press battles it is winning, retreat otherwise
+//   - casualties weakest-first (least combat value lost); press battles it is
+//     winning, retreat otherwise; pull subs out of air-only fights
 //   - land its aircraft, march idle units toward the front, mobilize at the
 //     factory nearest the enemy
 // Callers must validate via tryApplyAction and fall back to a random legal
@@ -14,6 +15,7 @@ import {
   airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy, isEnemyOccupied,
   isFriendlySpace, productionLevel, terr,
 } from '../engine/helpers';
+import { battleOpponents } from '../engine/combat';
 import { airPath, legalActions } from '../engine/legal';
 import { openingAction } from './openings';
 import { pendingBattleSpaces } from '../engine/turn';
@@ -761,12 +763,57 @@ function combatPhase(state: GameState, p: Power): Action {
   return { kind: 'endPhase' };
 }
 
+/** Pick this round's casualties: lose the pieces pulling the LEAST weight in the
+ * fight, not simply the cheapest ones. Cheapest-first threw away the wrong unit
+ * whenever price and combat value disagree — a bomber costs 15 but defends at 1,
+ * a fighter costs 12 and defends at 4, so the cheap-first rule burned the fighter
+ * and kept a piece that barely rolls (live report, Kwangtung). Order:
+ *   1. weakest in its CURRENT role (defence value when the hits land on the
+ *      defending side, attack value when they land on the attackers),
+ *   2. then the ships carrying nothing — a loaded transport drags its cargo
+ *      down with it (engine `killUnit`), so an empty one is the better loss,
+ *   3. then cheapest, so the surviving force keeps the most board value. */
+function casualtyChoice(state: GameState, legal: Action[]): Action {
+  const b = state.battle!;
+  const ph = b.pendingHits[0];
+  const units = ph.eligible
+    .map((id) => terr(state, b.territory).units.find((u) => u.id === id))
+    .filter((u): u is Unit => !!u);
+  if (units.length < ph.hits) return legal[0]; // engine will re-prune; take its list
+  const power = (u: Unit) => (ph.side === 'defender'
+    ? (u.type === 'fighter' && state.techs[u.owner].includes('jetPower') ? 5 : defVal(u))
+    : atkVal(u));
+  const ordered = [...units].sort((x, y) =>
+    power(x) - power(y) ||
+    x.cargo.length - y.cargo.length ||
+    UNITS[x.type].cost - UNITS[y.type].cost);
+  return { kind: 'chooseCasualties', unitIds: ordered.slice(0, ph.hits).map((u) => u.id) };
+}
+
 function battleDecision(state: GameState, p: Power): Action | null {
   const legal = legalActions(state, p);
   if (legal.length === 0) return null; // not our decision
   const b = state.battle!;
-  if (b.pendingHits.length > 0) return legal[0]; // cheapest-first casualty selection
+  if (b.pendingHits.length > 0) return casualtyChoice(state, legal);
   if (b.stage === 'subWithdrawAttacker' || b.stage === 'subWithdrawDefender') {
+    // A submarine can never fire at aircraft (spec §6.3 / rulebook p. 17). Once the
+    // other side is nothing but planes, staying in the battle is a free kill for
+    // them: the sub soaks hits round after round and can never shoot back, so it
+    // dies eventually with certainty (3e p. 5 says as much — "a surviving defending
+    // sub should withdraw"). Slip away instead of grinding. (Live report: a Russian
+    // sub sat in the North Sea trading nothing with a lone German fighter.)
+    const side = b.stage === 'subWithdrawAttacker' ? 'attacker' : 'defender';
+    const foes = battleOpponents(state, side);
+    if (foes.length > 0 && foes.every((u) => UNITS[u.type].domain === 'air')) {
+      const exits = legal.filter(
+        (a): a is Extract<Action, { kind: 'withdrawSubs' }> => a.kind === 'withdrawSubs',
+      );
+      // prefer slipping away to a zone that already holds friendly ships
+      const covered = exits.find((a) => terr(state, a.to).units
+        .some((u) => !isEnemy(u.owner, p) && UNITS[u.type].domain === 'sea'));
+      const away = covered ?? exits[0];
+      if (away) return away;
+    }
     return legal.find((a) => a.kind === 'pass') ?? legal[0];
   }
   // retreat decision: press while we out-punch the defense

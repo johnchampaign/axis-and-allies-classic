@@ -665,6 +665,14 @@ function finishBattle(state: GameState): void {
   state.battle = null;
 }
 
+/** The pieces still able to fire at you, from `side`'s point of view. Exported so
+ * the AI can ask "is the other side nothing but aircraft?" before deciding whether
+ * to keep a submarine in the fight (a sub can never shoot at planes, spec §6.3). */
+export function battleOpponents(state: GameState, side: 'attacker' | 'defender'): Unit[] {
+  if (!state.battle) return [];
+  return side === 'attacker' ? defenders(state) : attackers(state);
+}
+
 /** Who must act right now within a battle (for currentActor). */
 export function battleActor(state: GameState): Power | null {
   const b = state.battle;
