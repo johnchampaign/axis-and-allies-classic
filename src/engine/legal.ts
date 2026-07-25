@@ -39,9 +39,17 @@ function battleActions(state: GameState, actor: Power): Action[] {
     const units = ph.eligible
       .map((id) => ts.units.find((u) => u.id === id))
       .filter((u): u is Unit => !!u);
-    const byCost = [...units].sort((a, c) => UNITS[a.type].cost - UNITS[c.type].cost);
-    out.push({ kind: 'chooseCasualties', unitIds: byCost.slice(0, ph.hits).map((u) => u.id) });
-    const byCostDesc = [...byCost].reverse();
+    // Fodder order = weakest IN CONTEXT first: lose low-DEFENSE units when
+    // defending, low-ATTACK units when attacking — not merely the cheapest.
+    // Cheapest-first had a defending AI sacrifice a fighter (def 4, cost 12)
+    // to keep a bomber (def 1, cost 15) — strictly worse (live report).
+    // Ties: empty-cargo before loaded (cargo dies with its ship), then cheaper.
+    const val = (u: Unit) =>
+      ph.side === 'defender' ? UNITS[u.type].defense : UNITS[u.type].attack;
+    const byFodder = [...units].sort((a, c) =>
+      val(a) - val(c) || a.cargo.length - c.cargo.length || UNITS[a.type].cost - UNITS[c.type].cost);
+    out.push({ kind: 'chooseCasualties', unitIds: byFodder.slice(0, ph.hits).map((u) => u.id) });
+    const byCostDesc = [...units].sort((a, c) => UNITS[c.type].cost - UNITS[a.type].cost);
     const alt = byCostDesc.slice(0, ph.hits).map((u) => u.id);
     if (JSON.stringify(alt) !== JSON.stringify(out[0].kind === 'chooseCasualties' ? out[0].unitIds : [])) {
       out.push({ kind: 'chooseCasualties', unitIds: alt });
