@@ -423,6 +423,35 @@ function purchase(state: GameState, p: Power): Action {
   // ANY power builds boats when an enemy-held capital is sea-only reachable —
   // live report: Russia banked 155 IPCs while Japan held London with 2 units.
   const seaOnlyCapital = sealiftCapital(state, p);
+  // ...but only if the landing could ever happen. Building an invasion fleet for
+  // a capital we cannot storm is the most expensive way to do nothing.
+  //
+  // Live game l3s5k9x5bp0pqg8i (human Japan, 2026-07-26, reported as "Germany
+  // wasn't pulling its weight" and surrendered as a stalemate): AI Germany bought
+  // ELEVEN transports over 12 rounds -- ~88 IPC, about two and a half turns of
+  // its entire national income -- because London is sea-only reachable, so the
+  // rule below scaled its fleet to its whole land army. London held 17 defenders
+  // the whole time, so the amphibious commit never cleared 1.4:1 and the fleet
+  // never landed: it ended as six EMPTY boats in the East Mediterranean while the
+  // German army sat in West Europe. Germany's income never moved off its opening
+  // 32 in twelve rounds, because the cash that should have gone east against
+  // Russia -- the front it could actually win -- went into boats instead.
+  //
+  // A full fleet lands 2 units per boat and realistic cargo is infantry (attack
+  // 1), so an all-in wave is worth roughly 2 * cap attack power. If that cannot
+  // clear the beach at our own margin, scale sealift back to the profile's fleet.
+  // The crippled/dominant endgame is exempt: that grind wins by attrition
+  // regardless of odds (the tuned Tokyo close-out depends on massing boats
+  // against a stacked capital), so it must keep building them.
+  const foeSide = SIDE_OF[p] === 'allies' ? 'axis' : 'allies';
+  const outmatch = sideStrength(state, SIDE_OF[p]) >= 2 * sideStrength(state, foeSide);
+  const grindingDown = enemyIncome(state, p) <= 12 || outmatch;
+  const stormable = !seaOnlyCapital ? false
+    : grindingDown || defenseOf(state, seaOnlyCapital, p) * prof.margin <= 2 * 15;
+  // Is sealift how this power reaches the war at all? For an island/ocean power
+  // yes; for Germany, with a land route east to Russia, no. Gates every rule that
+  // would otherwise convert a surplus into boats.
+  const sealiftIsOurRoute = isSeaPower(state, p) || stormable;
   if (seaPlaceable && ((prof.transports > 0 && isSeaPower(state, p)) || seaOnlyCapital)) {
     // Scale sealift to the army that needs moving. When the only enemy left is
     // sea-locked (e.g. just Japan, across the ocean), a huge idle land army is
@@ -434,9 +463,14 @@ function purchase(state: GameState, p: Power): Action {
     for (const ts2 of Object.values(state.territories)) {
       landUnits += ts2.units.filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && isCombat(u)).length;
     }
-    const cap = seaOnlyCapital ? 15 : 9;
+    const cap = stormable ? 15 : 9;
+    // A clogged capital only justifies more boats if boats are how this power
+    // reaches the war. Germany has a land route east to Russia — its pile should
+    // march, not sail — so a home pile must not buy it a fleet either.
     const target = Math.min(cap, Math.max(
-      prof.transports, seaOnlyCapital ? Math.ceil(landUnits / 8) : 0, Math.ceil(homePile / 5),
+      prof.transports,
+      stormable ? Math.ceil(landUnits / 8) : 0,
+      sealiftIsOurRoute ? Math.ceil(homePile / 5) : 0,
     ));
     buy('transport', Math.max(0, target - myTransportCount(state, p)));
   }
@@ -508,8 +542,14 @@ function purchase(state: GameState, p: Power): Action {
     buy('armor', Math.min(armorCap, Math.floor((cash * armorShare) / UNITS.armor.cost)));
     const already = (order.armor ?? 0);
     buy('infantry', Math.max(0, forwardCapacity - already));
-    if (seaPlaceable) buy('transport', 99); // soak the surplus into sealift
-    if (cash >= UNITS.infantry.cost) buy('infantry', 99); // landlocked surplus → units, not bank
+    // Soak the surplus into sealift only when sealift is how we reach the war.
+    // Ungated, this was the biggest single drain: a land power with a clogged
+    // capital converted every spare IPC into boats it could never use (game
+    // l3s5k9x5bp0pqg8i -- Germany, ~88 IPC of transports, six left empty in the
+    // East Med). For a land power the surplus falls through to infantry below,
+    // which can actually walk to the front.
+    if (seaPlaceable && sealiftIsOurRoute) buy('transport', 99);
+    if (cash >= UNITS.infantry.cost) buy('infantry', 99); // surplus → units, never bank
     if (Object.keys(order).length === 0) return { kind: 'endPhase' };
     return { kind: 'purchase', order };
   }

@@ -25,6 +25,18 @@
 //                                      econ wins   danger gate   peak income
 //   2026-07-26 baseline                 5/16          9/16        75.1 (max 91)
 //   2026-07-26 noncombat garrison fix   2/16          5/16        69.3 (max 88)
+//  -- OPPONENT CHANGED HERE, rows above are not comparable to rows below --
+//   2026-07-26 sealift feasibility      4/16          7/16        73.3 (max 88)
+//
+// That last row is NOT an Allied regression. This opponent delegates its
+// PURCHASES to chooseAction, so the sealift-feasibility gate (heuristic.ts
+// purchase(): don't build an invasion fleet for a capital you cannot storm) made
+// the AXIS spend on units instead of unusable boats — it tuned the opponent, which
+// is what the re-baseline warning above is for. The Allied side barely moved:
+// isSeaPower is true for UK and USA so their sealift is untouched, and Russia's
+// transport buying measured 11/12/7/8 before versus 12/12/10/9 after. The
+// symmetric read is the 24-game tournament, where axis wins went 1 -> 3 and
+// round-caps 5 -> 4.
 //
 // HONEST LIMIT: real players win ~90% of their human-Axis games on production;
 // this opponent manages ~31%. It reproduces the failure often enough to measure
