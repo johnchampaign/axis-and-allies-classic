@@ -40,6 +40,28 @@ const OPENINGS: Partial<Record<Power, Opening>> = {
       { from: 'karelia-ssr', to: 'ukraine-ssr', take: { fighter: 1 } },
     ],
   },
+  // USA: mined 2026-07-26 from four human games (l5mhqmcat2k4eltl,
+  // db7nbpxyt5gcv2od, yn3eolnky9sth3hz, aebhsuwd27dnjgvc). Nothing booked, and
+  // this one needed no experiment — there is simply no opening to mine.
+  //
+  // FOUR games, FOUR entirely different buys, all spending the full ~36 IPC:
+  //   {carrier, factory, infantry}   {carrier, fighter, infantry x2}
+  //   {transport x3, infantry x4}    {factory, submarine x2, infantry}
+  // Two bought a carrier, two bought a factory, no majority on anything. And the
+  // heuristic's own buy — {transport 3, infantry 4} on every seed — is EXACTLY
+  // one of the four human lines, so it is already playing a human opening.
+  //
+  // The one recurring move is an attack on hawaii-sea-zone (3/4), which is a
+  // response to Japan's Pearl Harbor strike on the turn before, not a fixed
+  // opening. (The AI Japan does make that strike unaided — checked, 2 Japanese
+  // units sit in hawaii-sea-zone at the USA's round-1 turn — so the situation
+  // arises; whether to counter-attack is a fleet-balance judgement, which is
+  // tactics, not a book.)
+  //
+  // The USA also moves LAST, so its round-1 board has absorbed four other powers'
+  // turns. "Round 1 is a solved domain" is exactly true for the USSR and gets
+  // progressively less true down the turn order.
+  //
   // UK: mined 2026-07-26 from three human games (4zi166ulafibkqgh,
   // db7nbpxyt5gcv2od, yn3eolnky9sth3hz). Nothing booked — and this is the most
   // instructive of the three failures, because unlike Germany and Japan the UK
@@ -94,8 +116,18 @@ const OPENINGS: Partial<Record<Power, Opening>> = {
   //    then survives every game. A mined opening only transfers if the AI can play
   //    the rest of the plan behind it. DO NOT re-add without re-measuring.
   //
-  // The USSR book above works because its opening is a single self-contained blow
-  // that needs no follow-through.
+  // ALL FOUR non-USSR powers have now been mined (2026-07-26) and none was
+  // booked. The USSR remains the only entry, and the reasons the others failed
+  // are worth keeping together, because they are three different failures:
+  //   germany/japan  the consensus moves are ALREADY what the heuristic plays
+  //   japan/uk       the moves that differ make the AI measurably WORSE, because
+  //                  a human opening assumes a follow-through this stateless,
+  //                  one-decision-per-call heuristic cannot provide
+  //   usa            there is no consensus to mine in the first place
+  // The USSR book works because its opening is a single self-contained blow that
+  // needs no follow-through, against a board that is identical every game. Both
+  // of those properties weaken down the turn order. Treat "mine another opening"
+  // as done unless the AI gains real multi-turn planning.
 };
 
 export function openingAction(state: GameState, p: Power): Action | null {
