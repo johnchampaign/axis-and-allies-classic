@@ -24,6 +24,11 @@ import { CAPITAL_OF, SIDE_OF, TURN_ORDER, type Action, type GameState, type Powe
 // Economic victory fires when one side's combined production reaches this (spec
 // §11). The Allies must actively deny it — retake income, liberate capitals.
 const ECON_WIN = 84;
+// Note for anyone reaching for an earlier economic gate than `danger` below:
+// 70 was tried (income crosses 75 only ~1 round before 84, while 70 lands ~6
+// rounds out) and it fires too rarely to matter — all-heuristic axis income
+// peaks at ~66 on average. See the DEAD END note on the amphibious commit in
+// transportPlay().
 // DEAD END, do not redo (2026-07-26): re-scoring amphibious targets to prefer
 // undefended income — a free-capture bonus, and an extra income weight once axis
 // production passes 70 — was measured on the strong-axis harness and made things
@@ -1249,6 +1254,24 @@ function transportPlay(state: GameState, p: Power, phase: 'combatMove' | 'noncom
           // so the only way through is fight-to-death attrition: every wave kills
           // a few defenders the stripped enemy can't replace. The >=6 floor keeps
           // us from trickling a lone boat into the meat grinder.
+          // THE PARKED FLEET IS A LANDING PROBLEM, NOT A LOADING ONE (measured
+          // 2026-07-26, scripts/probe-econ-denial.ts reports the sealift chain).
+          // In a harness autopsy of an Axis economic win the Allies had 11 loaded
+          // transports and ALL ELEVEN were already sitting beside an Axis coast,
+          // refusing to disembark because 1.4:1 never came. The fleet does the
+          // hard part and then stops.
+          //
+          // DEAD END, do not redo as-is: relaxing this commit to 0.9:1 for a wave
+          // with weight (power >= 4), gated on axis production >= 70, was a
+          // complete no-op — harness 2/16 econ wins and peak income 69.3
+          // unchanged, benchmark 4.2/8.5 unchanged, and a 24-game tournament came
+          // back byte-identical. The gate is why: all-heuristic axis income peaks
+          // at ~66 on average, so it almost never fires, and the games where it
+          // does fire are decided by round 6-15 — too early for sealift to matter
+          // at all. Lowering the gate would make it fire in ordinary positions,
+          // which is the broad-relaxation class that has regressed this AI
+          // repeatedly. If this is picked up again, the lever to try is getting
+          // the army moving EARLIER, not landing it on worse odds later.
           const commit = defense === 0 || (crippled && power >= 6) || power / defense >= PROFILES[p].margin;
           if (commit) {
             const score = def(t).ipc * 2 + canalBonus(state, t, p) - defense;

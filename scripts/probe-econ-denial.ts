@@ -328,6 +328,42 @@ if (autopsy) {
     .reduce((n, ts) => n + ts.units.filter((u) => SIDE_OF[u.owner] === 'allies' && u.type === 'transport').length, 0);
   console.log(`allied transports afloat: ${transports}; banked ipc: ${JSON.stringify(
     Object.fromEntries(Object.entries(s.ipcs).filter(([q]) => SIDE_OF[q as Power] === 'allies')))}`);
+
+  // Why is the army parked? Break the sealift chain down link by link: are the
+  // boats empty (loading failed), loaded but idle (no target / no commit), and
+  // is there loadable infantry sitting on a coast next to an empty boat?
+  let empty = 0, loaded = 0, loadedNextToEnemyCoast = 0;
+  for (const [z, ts] of Object.entries(s.territories)) {
+    if (!def(z).water) continue;
+    for (const u of ts.units) {
+      if (SIDE_OF[u.owner] !== 'allies' || u.type !== 'transport') continue;
+      if (u.cargo.length === 0) { empty++; continue; }
+      loaded++;
+      const beach = def(z).connections.some((c) => {
+        const ct = s.territories[c];
+        return ct && !def(c).water && ct.owner !== null && SIDE_OF[ct.owner] === 'axis';
+      });
+      if (beach) loadedNextToEnemyCoast++;
+    }
+  }
+  // Troops that COULD board: allied land units on an own coast whose adjacent
+  // water holds an empty own transport.
+  let boardable = 0;
+  for (const [t, ts] of Object.entries(s.territories)) {
+    if (def(t).water || !ts.owner || SIDE_OF[ts.owner] !== 'allies') continue;
+    const land = ts.units.filter((u) => SIDE_OF[u.owner] === 'allies' &&
+      (u.type === 'infantry' || u.type === 'armor')).length;
+    if (!land) continue;
+    const boatNearby = def(t).connections.some((c) => {
+      const ct = s.territories[c];
+      return ct && def(c).water && ct.units.some((u) =>
+        SIDE_OF[u.owner] === 'allies' && u.type === 'transport' && u.cargo.length === 0);
+    });
+    if (boatNearby) boardable += land;
+  }
+  console.log(`  sealift chain: ${empty} empty boats, ${loaded} loaded ` +
+    `(${loadedNextToEnemyCoast} of those already beside an axis coast), ` +
+    `${boardable} allied land units standing next to an empty boat`);
 }
 
 // Median income trajectory: what the Allies would have to react to.
