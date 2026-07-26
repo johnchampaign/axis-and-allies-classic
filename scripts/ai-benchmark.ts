@@ -35,6 +35,13 @@ function playGame(seed: number, heuristicSide: Side): { winner: Side | null; rou
     }
     actions++;
   }
+  // A real game resolves in ~1k actions. Hitting the cap means the loop is not
+  // progressing — a livelock (e.g. a space permanently "pending battle" that the
+  // battle machinery then refuses to fight). Fail loudly: previously this quietly
+  // returned a draw, so the bug only showed up as "the benchmark is slow".
+  if (actions >= MAX_ACTIONS) {
+    throw new Error(`action cap hit at seed ${seed} (${state.phase}/${adapter.currentActor(state)}) — probable livelock`);
+  }
   return { winner: state.winner, rounds: state.round };
 }
 

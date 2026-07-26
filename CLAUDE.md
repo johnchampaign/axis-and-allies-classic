@@ -59,4 +59,8 @@ no UI before the headless soak passes.
   Local dev: `.dev.vars` (gitignored) + `wrangler pages dev dist`.
   v0.8.x server barrel is Workers-safe (FsStore lives in `/server/node`).
   Note: `npx` breaks in this repo path (the `&`); run tools as
-  `node node_modules/<pkg>/bin/...`.
+  `node node_modules/<pkg>/bin/...`. Same for **npm scripts** — a bare
+  binary name (`vite`, `tsc`, `vitest`, `wrangler`) resolves via the
+  `node_modules/.bin` PATH shim, which cmd.exe splits at the `&`. Every
+  script in `package.json` must spell out the `node node_modules/...`
+  entry point.

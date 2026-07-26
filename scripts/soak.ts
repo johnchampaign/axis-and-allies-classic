@@ -28,6 +28,13 @@ for (let i = 0; i < N; i++) {
       console.error(`seed ${seed}: STALL at round ${r.rounds}`);
       continue;
     }
+    // Blowing the action cap means the game stopped progressing (livelock), not
+    // that it was merely long — that is a failure, never a normal outcome.
+    if (r.outcome === 'action-cap') {
+      failures++;
+      console.error(`seed ${seed}: ACTION CAP at round ${r.rounds} — probable livelock`);
+      continue;
+    }
     // serialization round-trip: encode → decode → re-encode identical
     const enc = codec.encode(r.finalState);
     const re = codec.encode(codec.decode(enc));

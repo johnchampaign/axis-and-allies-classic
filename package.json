@@ -4,15 +4,19 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "deploy": "vite build && wrangler pages deploy dist --project-name axis-and-allies-classic --branch main --commit-dirty=true",
-    "headless": "vite-node scripts/headless.ts",
-    "soak": "vite-node scripts/soak.ts",
-    "typecheck": "tsc --noEmit",
-    "audit:layout": "vite-node scripts/audit-layout.ts",
-    "adjacency:diff": "vite-node scripts/adjacency-diff.ts",
-    "test": "vitest run && vite-node scripts/audit-layout.ts"
+    "dev": "node node_modules/vite/bin/vite.js",
+    "build": "node node_modules/vite/bin/vite.js build",
+    "deploy": "npm run build && node node_modules/wrangler/bin/wrangler.js pages deploy dist --project-name axis-and-allies-classic --branch main --commit-dirty=true",
+    "headless": "node node_modules/vite-node/vite-node.mjs scripts/headless.ts",
+    "soak": "node node_modules/vite-node/vite-node.mjs scripts/soak.ts",
+    "bench": "node node_modules/vite-node/vite-node.mjs scripts/ai-benchmark.ts",
+    "tournament": "node node_modules/vite-node/vite-node.mjs scripts/ai-tournament.ts",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "audit:layout": "node node_modules/vite-node/vite-node.mjs scripts/audit-layout.ts",
+    "adjacency:diff": "node node_modules/vite-node/vite-node.mjs scripts/adjacency-diff.ts",
+    "unit": "node node_modules/vitest/vitest.mjs run",
+    "test": "npm run typecheck && npm run unit && npm run audit:layout && npm run soak -- 10 && npm run bench -- 3",
+    "test:sim": "npm run soak -- 60 && npm run bench -- 10"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

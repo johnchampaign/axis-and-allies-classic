@@ -5,7 +5,7 @@ import { createGame } from '../src/engine/setup';
 import type { GameState } from '../src/engine/types';
 
 export interface SimResult {
-  outcome: 'axis' | 'allies' | 'round-cap' | 'stall';
+  outcome: 'axis' | 'allies' | 'round-cap' | 'stall' | 'action-cap';
   winReason: string | null;
   actions: number;
   rounds: number;
@@ -23,9 +23,11 @@ export function playGame(seed: number, opts: { verbose?: boolean } = {}): SimRes
   let actions = 0;
 
   while (adapter.currentActor(state) !== null) {
-    if (state.round >= MAX_ROUNDS || actions >= MAX_ACTIONS) {
-      return done('round-cap');
-    }
+    // A round-cap is a legitimate long game; blowing the ACTION cap is not — it
+    // means the loop stopped progressing (livelock). Report them separately so
+    // the soak can fail on the latter instead of counting it as a normal draw.
+    if (actions >= MAX_ACTIONS) return done('action-cap');
+    if (state.round >= MAX_ROUNDS) return done('round-cap');
     const actor = adapter.currentActor(state)!;
     const legal = adapter.legalActions(state, actor);
     if (legal.length === 0) {

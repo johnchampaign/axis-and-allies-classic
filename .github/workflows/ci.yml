@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Fast gate: types, unit tests, board-layout audit.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run unit
+      - name: Board layout audit
+        run: npm run audit:layout
+      - name: Build
+        run: npm run build
+
+      # Simulation gates. These are what catch engine/state corruption that unit
+      # tests miss: the soak asserts no crash, no stall, no livelock (action cap)
+      # and seed determinism; the benchmark throws when legalActions offers an
+      # action tryApplyAction rejects, or when a game fails to progress.
+      # Two real bugs (a ship "retreating" onto land, and a battle livelock) had
+      # already shipped before these ran automatically.
+      - name: Soak (random play, determinism)
+        run: npm run soak -- 60
+      - name: AI benchmark (legality + progress)
+        run: npm run bench -- 10
