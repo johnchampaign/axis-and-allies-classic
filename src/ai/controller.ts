@@ -40,7 +40,12 @@ const standard: PlayerController<GameState, Action, Power> = {
   },
 };
 
-/** Difficulty key → controller. The key is the leaderboard rating suffix. */
+/** Difficulty key → controller. The key is the leaderboard rating suffix.
+ *  'standard@2' (2026-07-26): the noncombat garrison fix measurably changed the
+ *  AI's strength, so it rates fresh. 'standard' stays mapped to the same
+ *  controller for games created before the bump — the strength label is
+ *  historical, the code behind it is always current. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
-  standard,
+  'standard': standard,
+  'standard@2': standard,
 };

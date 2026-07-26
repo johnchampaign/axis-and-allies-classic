@@ -30,9 +30,14 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       : crypto.getRandomValues(new Uint32Array(1))[0];
 
     // Framework server-driven AI seats (rated). Only known difficulty keys.
+    // Both keys stay accepted: 'standard@2' is what the current Lobby sends, and
+    // 'standard' is what a browser running cached JS still sends (iOS Safari
+    // caches indefinitely). Dropping the old key would silently create those
+    // games with no AI seats at all.
+    const AI_KEYS = new Set(['standard', 'standard@2']);
     const fwAi = Object.fromEntries(
       Object.entries(body.ai ?? {})
-        .filter(([p, d]) => TURN_ORDER.includes(p as Power) && d === 'standard'),
+        .filter(([p, d]) => TURN_ORDER.includes(p as Power) && AI_KEYS.has(d as string)),
     ) as Partial<Record<Power, string>>;
     const fwAiPowers = Object.keys(fwAi) as Power[];
 
