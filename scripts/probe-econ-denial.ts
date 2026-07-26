@@ -72,6 +72,8 @@ interface GameReport {
   alliedAdjacentAtEnd: number;
   /** per Allied capital: the round it first fell to the Axis (null = never) */
   capitalFell: Record<string, number | null>;
+  /** final state, kept so a lost game can be autopsied like a real uploaded one */
+  final: GameState;
 }
 
 const ALLIED_POWERS = TURN_ORDER.filter((p) => SIDE_OF[p] === 'allies');
@@ -184,6 +186,7 @@ function playGame(seed: number): GameReport {
   return {
     seed, winner: state.winner ?? 'round-cap', rounds: state.round,
     peakAxis, dangerRound, winRound, rows, gains, alliedAdjacentAtEnd, capitalFell,
+    final: state,
   };
 }
 
@@ -295,6 +298,37 @@ for (const r of reports) for (const g of r.gains) {
 const top = [...byTerr.entries()].sort((a, b) => b[1].lost * b[1].ipc - a[1].lost * a[1].ipc).slice(0, 12);
 console.log(`\ntop Axis income gains (territory, ipc, games lost in, allied recaptures):`);
 for (const [t, e] of top) console.log(`  ${t.padEnd(22)} ipc ${String(e.ipc).padEnd(3)} lost in ${e.lost}/${N}  retaken ${e.retaken}x`);
+
+// Autopsy of a harness loss, in the same shape as analyze-endgame.mjs on a real
+// uploaded game: what income did the Axis hold uncontested, and where was the
+// Allied army while it happened?
+const autopsy = reports.find((r) => r.winner === 'axis');
+if (autopsy) {
+  const s = autopsy.final;
+  console.log(`\n--- autopsy: seed ${autopsy.seed} (axis win, r${autopsy.rounds}) ---`);
+  const free: { t: string; ipc: number }[] = [];
+  for (const [t, ts] of Object.entries(s.territories)) {
+    if (def(t).water || !ts.owner || SIDE_OF[ts.owner] !== 'axis' || def(t).ipc < 2) continue;
+    const garrison = ts.units.filter((u) => SIDE_OF[u.owner] === 'axis').length;
+    const adj = def(t).connections.reduce((n, c) =>
+      n + (s.territories[c]?.units.filter((u) => SIDE_OF[u.owner] === 'allies').length ?? 0), 0);
+    if (garrison === 0 && adj === 0) free.push({ t, ipc: def(t).ipc });
+  }
+  console.log(`axis income held with no garrison and no allied unit adjacent: ` +
+    `${free.length} territories, ${free.reduce((n, f) => n + f.ipc, 0)} ipc` +
+    (free.length ? ` (${free.map((f) => `${f.t} ${f.ipc}`).join(', ')})` : ''));
+  const conc: { t: string; n: number }[] = [];
+  for (const [t, ts] of Object.entries(s.territories)) {
+    const n = ts.units.filter((u) => SIDE_OF[u.owner] === 'allies').length;
+    if (n) conc.push({ t, n });
+  }
+  conc.sort((a, b) => b.n - a.n);
+  console.log(`allied units: ${conc.reduce((n, c) => n + c.n, 0)}; top: ${conc.slice(0, 6).map((c) => `${c.t} ${c.n}`).join(', ')}`);
+  const transports = Object.values(s.territories)
+    .reduce((n, ts) => n + ts.units.filter((u) => SIDE_OF[u.owner] === 'allies' && u.type === 'transport').length, 0);
+  console.log(`allied transports afloat: ${transports}; banked ipc: ${JSON.stringify(
+    Object.fromEntries(Object.entries(s.ipcs).filter(([q]) => SIDE_OF[q as Power] === 'allies')))}`);
+}
 
 // Median income trajectory: what the Allies would have to react to.
 const maxR = Math.max(...reports.map((r) => r.rounds));

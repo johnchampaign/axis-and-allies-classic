@@ -19,13 +19,12 @@
 // Everything this does not override falls through to the real heuristic, so the
 // opponent stays a plausible player rather than a scripted exploit.
 //
-// BASELINE (2026-07-26, 16 games, `probe-econ-denial.ts 16 strong-axis`):
-//   axis economic wins   5/16, at rounds 6, 6, 9, 13, 18
-//   danger gate reached  9/16
-//   peak axis income     avg 75.1, max 91
-// Compare against this when changing the ALLIED side: a real fix should push the
-// econ-win count toward zero and drop peak axis income. Re-baseline (and say so)
-// if this opponent is ever tuned, or the two numbers are not comparable.
+// SCOREBOARD (16 games, `probe-econ-denial.ts 16 strong-axis`). Compare against
+// the latest row when changing the ALLIED side; re-baseline (and say so) if this
+// opponent is ever tuned, or the numbers are not comparable.
+//                                      econ wins   danger gate   peak income
+//   2026-07-26 baseline                 5/16          9/16        75.1 (max 91)
+//   2026-07-26 noncombat garrison fix   2/16          5/16        69.3 (max 88)
 //
 // HONEST LIMIT: real players win ~90% of their human-Axis games on production;
 // this opponent manages ~31%. It reproduces the failure often enough to measure

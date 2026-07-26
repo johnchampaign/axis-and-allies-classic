@@ -24,6 +24,13 @@ import { CAPITAL_OF, SIDE_OF, TURN_ORDER, type Action, type GameState, type Powe
 // Economic victory fires when one side's combined production reaches this (spec
 // §11). The Allies must actively deny it — retake income, liberate capitals.
 const ECON_WIN = 84;
+// DEAD END, do not redo (2026-07-26): re-scoring amphibious targets to prefer
+// undefended income — a free-capture bonus, and an extra income weight once axis
+// production passes 70 — was measured on the strong-axis harness and made things
+// WORSE (econ wins 5/16 -> 7/16 with both terms, 5/16 with the free-capture term
+// alone). Target preference is not the bottleneck: the games are decided by
+// round 6-9, far too early for any Allied offensive to matter. What worked was
+// defensive — see the last-defender guard in noncombat().
 /** Combined production of the side opposing p (Axis income when p is Allied). */
 function enemyIncome(state: GameState, p: Power): number {
   return TURN_ORDER.filter((q) => isEnemy(q, p)).reduce((s, q) => s + productionLevel(state, q), 0);
@@ -948,6 +955,21 @@ function noncombat(state: GameState, p: Power): Action | null {
           u.owner === p && !u.movedPhase && !u.fought &&
           (u.type === 'infantry' || u.type === 'armor'));
     if (movers.length === 0) continue;
+    // Never march the LAST defender out of an income territory. The guard above
+    // only holds units that already have an enemy UNIT next door, so the army
+    // walks away from territory the enemy merely borders — and an empty income
+    // territory is a free walkover. That is what an Axis economic victory is
+    // built out of: in the harness autopsy the Axis held 16 IPC with no garrison
+    // anywhere on it, and the two analysed real games were the same picture at
+    // 16-20 IPC. One infantry does not stop an assault, but it turns a free grab
+    // into a fight the attacker has to be willing to take.
+    let marching = movers;
+    if (def(t).ipc > 0 && t !== CAPITAL_OF[p]) {
+      const defenders = ts.units.filter((u) =>
+        u.owner === p && isCombat(u) && UNITS[u.type].domain === 'land');
+      if (defenders.length - movers.length < 1) marching = movers.slice(0, movers.length - 1);
+    }
+    if (marching.length === 0) continue;
     let step: string | null = null;
     if (seaOnlyCapital && myTransportCount(state, p) > 0) {
       const embark = embarkCoast(state, p, t);
@@ -956,7 +978,7 @@ function noncombat(state: GameState, p: Power): Action | null {
     // funnel toward the breakthrough capital; fall back to nearest-enemy when it
     // is unreachable by land (greedy gradient finds no closer friendly neighbour)
     step = step ?? (objective ? stepTowardGoal(state, t, objective, p) : null) ?? stepTowardEnemy(state, t, p);
-    if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
+    if (step) return { kind: 'move', unitIds: marching.map((u) => u.id), path: [t, step] };
   }
   return null;
 }
