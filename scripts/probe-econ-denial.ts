@@ -18,9 +18,15 @@
 //     (could they have contested, or was the army elsewhere?).
 //
 // Run: node node_modules/vite-node/vite-node.mjs scripts/probe-econ-denial.ts [games] [matchup]
-//   matchup: all-heuristic (default) | axis-heuristic | allies-heuristic
+//   matchup: all-heuristic (default) | axis-heuristic | allies-heuristic | strong-axis
+//
+// strong-axis is the one that matters: the econ-rush opponent from
+// scripts/strong-axis.ts against the real heuristic Allies. It is the only
+// matchup that reproduces what human players actually do to us, and therefore
+// the only one that can validate a fix to the Allied side.
 import { Rng } from 'digital-boardgame-framework';
 import { chooseAction } from '../src/ai/heuristic';
+import { chooseStrongAxisAction } from './strong-axis';
 import { axisAndAlliesAdapter as adapter } from '../src/engine/adapter';
 import { def } from '../src/engine/data';
 import { isEnemy, productionLevel } from '../src/engine/helpers';
@@ -28,7 +34,8 @@ import { createGame } from '../src/engine/setup';
 import { CAPITAL_OF, SIDE_OF, TURN_ORDER, type GameState, type Power, type Side } from '../src/engine/types';
 
 const N = Number(process.argv[2] ?? 8);
-const MATCHUP = (process.argv[3] ?? 'all-heuristic') as 'all-heuristic' | 'axis-heuristic' | 'allies-heuristic';
+const MATCHUP = (process.argv[3] ?? 'all-heuristic') as
+  'all-heuristic' | 'axis-heuristic' | 'allies-heuristic' | 'strong-axis';
 const MAX_ROUNDS = 40;
 const MAX_ACTIONS = 100_000;
 
@@ -40,10 +47,14 @@ const AXIS: Power[] = TURN_ORDER.filter((p) => SIDE_OF[p] === 'axis');
 const sideIncome = (s: GameState, side: Side) =>
   TURN_ORDER.filter((p) => SIDE_OF[p] === side).reduce((n, p) => n + productionLevel(s, p), 0);
 
-/** Heuristic drives this side? (the other side plays random-legal) */
-function heuristicDrives(side: Side): boolean {
-  if (MATCHUP === 'all-heuristic') return true;
+/** An AI drives this side? (otherwise it plays random-legal) */
+function aiDrives(side: Side): boolean {
+  if (MATCHUP === 'all-heuristic' || MATCHUP === 'strong-axis') return true;
   return MATCHUP === 'axis-heuristic' ? side === 'axis' : side === 'allies';
+}
+/** Which brain plays this power. Only strong-axis swaps the Axis out. */
+function brainFor(side: Side) {
+  return MATCHUP === 'strong-axis' && side === 'axis' ? chooseStrongAxisAction : chooseAction;
 }
 
 interface RoundRow { round: number; axis: number; allies: number }
@@ -117,11 +128,21 @@ function playGame(seed: number): GameReport {
   while (adapter.currentActor(state) !== null && state.round < MAX_ROUNDS && actions < MAX_ACTIONS) {
     const actor = adapter.currentActor(state)!;
     let applied = false;
-    if (heuristicDrives(SIDE_OF[actor])) {
-      const a = chooseAction(state, actor);
+    if (aiDrives(SIDE_OF[actor])) {
+      const a = brainFor(SIDE_OF[actor])(state, actor);
       if (a) {
         const r = adapter.tryApplyAction!(state, a, actor);
         if (r.ok) { state = r.state; applied = true; }
+      }
+      // The strong-Axis grab is a PROPOSAL; if the engine rejected it, fall back
+      // to the real heuristic before resorting to random play, or the opponent
+      // would get weaker every time its preferred move happened to be illegal.
+      if (!applied && brainFor(SIDE_OF[actor]) !== chooseAction) {
+        const b = chooseAction(state, actor);
+        if (b) {
+          const r = adapter.tryApplyAction!(state, b, actor);
+          if (r.ok) { state = r.state; applied = true; }
+        }
       }
     }
     if (!applied) {
