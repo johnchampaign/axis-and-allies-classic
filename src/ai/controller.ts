@@ -40,12 +40,16 @@ const standard: PlayerController<GameState, Action, Power> = {
   },
 };
 
-/** Difficulty key → controller. The key is the leaderboard rating suffix.
- *  'standard@2' (2026-07-26): the noncombat garrison fix measurably changed the
- *  AI's strength, so it rates fresh. 'standard' stays mapped to the same
- *  controller for games created before the bump — the strength label is
- *  historical, the code behind it is always current. */
+/** Difficulty key → controller. The key is the leaderboard rating suffix, and it
+ *  is purely historical: every key maps to the SAME controller, because the code
+ *  behind it is always current. Bumping only starts a fresh rating so a strength
+ *  change does not drag the old one.
+ *    'standard'    original
+ *    'standard@2'  2026-07-26, noncombat garrison fix
+ *    'standard@3'  2026-07-26, sealift-feasibility gate
+ *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
   'standard@2': standard,
+  'standard@3': standard,
 };
