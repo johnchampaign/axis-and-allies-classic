@@ -49,13 +49,21 @@ for online play (Cloudflare Pages Functions + Supabase storage), React/Vite UI.
 
 ```bash
 npm install
-npm test              # 25 rules tests
-npm run soak          # hundreds of headless AI-vs-AI games
+npm test              # full gate: typecheck, 34 rules tests, layout audit, soak, benchmark
+npm run test:sim      # the longer simulation pass (soak 60, benchmark 10)
+npm run soak          # headless random-play games: no crash, no stall, seed determinism
 npm run dev           # local UI against the deployed API
 ```
 
-The headless harness (`scripts/`) includes a soak tester, an AI-vs-AI
-tournament, and probe scripts used to tune the AI from uploaded game logs.
+The same gates run in CI on every push (`.github/workflows/ci.yml`). They are
+what catch state corruption the unit tests miss: the soak fails a game that
+stalls or livelocks and checks that a seed replays identically, and both the
+soak and the benchmark throw if the engine ever rejects an action that
+`legalActions` offered.
+
+The headless harness (`scripts/`) also includes an AI-vs-AI tournament, a
+strong-Axis test opponent, and probe scripts used to tune the AI from uploaded
+game logs.
 
 ## Contributing
 
