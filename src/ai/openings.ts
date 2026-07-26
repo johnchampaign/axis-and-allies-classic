@@ -40,6 +40,31 @@ const OPENINGS: Partial<Record<Power, Opening>> = {
       { from: 'karelia-ssr', to: 'ukraine-ssr', take: { fighter: 1 } },
     ],
   },
+  // UK: mined 2026-07-26 from three human games (4zi166ulafibkqgh,
+  // db7nbpxyt5gcv2od, yn3eolnky9sth3hz). Nothing booked — and this is the most
+  // instructive of the three failures, because unlike Germany and Japan the UK
+  // opening genuinely DIFFERS from what the heuristic plays.
+  //
+  //   humans     3/3 buy a FACTORY — 2x {factory, fighter, infantry},
+  //              1x {factory, factory}, all exactly 30 IPC
+  //   heuristic  {transport 2, infantry 4} every seed, never a factory
+  //   attacks    Black Sea 2/3, Baltic 2/3 (the heuristic already plays Baltic)
+  //
+  // Booked as `purchase: { factory: 1, fighter: 1, infantry: 1 }` it was accepted
+  // by the engine and the factory placed sensibly (a forward Mediterranean
+  // launchpad in anglo-sudan-egypt). It still regressed everything:
+  //     benchmark   allies 8.5 -> 8.7 avg rounds to win
+  //     tournament  round-caps 1 -> 3, allied wins 6 -> 4,
+  //                 rounds 20.9 -> 23.3, end units 406 -> 458
+  //     strong-axis harness  AXIS econ wins 2/16 -> 6/16,
+  //                 peak axis income 69.3 -> 75.1
+  // That last line is the point: 15 IPC is half the UK's income, and diverting
+  // it from the unit stream directly costs the Allies the garrisons that stop an
+  // Axis economic victory — it undoes most of the noncombat garrison fix. This is
+  // the same wall every previous forward-factory attempt hit; a human can afford
+  // the tempo because they follow the factory up with a plan, and the heuristic
+  // is unit-starved without it. DO NOT re-add without re-measuring all three.
+  //
   // GERMANY AND JAPAN: mined 2026-07-26, nothing booked. Both halves of that are
   // findings, not gaps — re-read before spending another session on it.
   //
