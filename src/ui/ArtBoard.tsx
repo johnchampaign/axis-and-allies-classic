@@ -111,24 +111,28 @@ export const ArtBoard = memo(function ArtBoard({
             {rows.map((s, i) => {
               const url = artUrl(unitArtCandidates(s.type, s.owner));
               const { x, y, size } = cells[i];
+              return url ? (
+                <image key={`${s.owner}:${s.type}`} href={url} x={x} y={y} width={size} height={size}
+                  preserveAspectRatio="xMidYMid meet" filter="url(#token-outline)" />
+              ) : (
+                <circle key={`${s.owner}:${s.type}`} cx={x + size / 2} cy={y + size / 2} r={size / 2.8}
+                  fill={POWER_COLOR[s.owner]} stroke="#000" strokeWidth={3} />
+              );
+            })}
+            {/* Badges after every sprite: in a cascaded pile each sprite covers
+                the previous one's top-right corner, which is exactly where the
+                badge sits — drawn inline they were buried by the next unit. */}
+            {rows.map((s, i) => {
+              if (s.count <= 1) return null;
+              const { x, y, size } = cells[i];
               return (
-                <g key={`${s.owner}:${s.type}`}>
-                  {url ? (
-                    <image href={url} x={x} y={y} width={size} height={size}
-                      preserveAspectRatio="xMidYMid meet" filter="url(#token-outline)" />
-                  ) : (
-                    <circle cx={x + size / 2} cy={y + size / 2} r={size / 2.8} fill={POWER_COLOR[s.owner]} stroke="#000" strokeWidth={3} />
-                  )}
-                  {s.count > 1 && (
-                    <g>
-                      <circle cx={x + size * 0.88} cy={y + size * 0.16} r={size * 0.22}
-                        fill={POWER_COLOR[s.owner]} stroke="#fff" strokeWidth={3} />
-                      <text x={x + size * 0.88} y={y + size * 0.16 + size * 0.13} fontSize={size * 0.38} fontWeight={800}
-                        textAnchor="middle" fill="#fff">
-                        {s.count}
-                      </text>
-                    </g>
-                  )}
+                <g key={`n-${s.owner}:${s.type}`}>
+                  <circle cx={x + size * 0.88} cy={y + size * 0.16} r={size * 0.22}
+                    fill={POWER_COLOR[s.owner]} stroke="#fff" strokeWidth={3} />
+                  <text x={x + size * 0.88} y={y + size * 0.16 + size * 0.13} fontSize={size * 0.38} fontWeight={800}
+                    textAnchor="middle" fill="#fff">
+                    {s.count}
+                  </text>
                 </g>
               );
             })}
