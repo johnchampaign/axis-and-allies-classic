@@ -178,6 +178,50 @@ describe('combat', () => {
     expect(s.territories['karelia-ssr'].owner).toBe('russia'); // spec §6.6
   });
 
+  it('a defender carrying a stale combatDone flag still fights and dies (live report)', () => {
+    // A US bomber that raided (or broke off) on the US turn keeps combatDone until
+    // the US turn comes round again. When Germany attacks in between it must defend
+    // like any other piece — it used to be skipped by the battle and left standing
+    // in the territory Germany had just captured.
+    let s = at('combatMove', 'germany', 7);
+    clear(s, 'karelia-ssr');
+    addUnit(s, 'karelia-ssr', 'infantry', 'russia');
+    const bomber = addUnit(s, 'karelia-ssr', 'bomber', 'usa', { combatDone: true });
+    const ids = Array.from({ length: 12 }, () => addUnit(s, 'east-europe', 'armor', 'germany').id);
+    s = apply(s, { kind: 'move', unitIds: ids, path: ['east-europe', 'karelia-ssr'] }, 'germany');
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    expect(pendingBattleSpaces(s)).toContain('karelia-ssr');
+    s = apply(s, { kind: 'startBattle', territory: 'karelia-ssr' }, 'germany');
+    let guard = 0;
+    while (s.battle && guard++ < 50) {
+      const acts = A.legalActions(s, A.currentActor(s)!);
+      const cont = acts.find((a) => a.kind === 'continueBattle') ?? acts[0];
+      s = apply(s, cont, A.currentActor(s)!);
+    }
+    expect(s.territories['karelia-ssr'].owner).toBe('germany');
+    expect(s.territories['karelia-ssr'].units.some((u) => u.id === bomber.id)).toBe(false);
+  });
+
+  it('a lone stale-flagged enemy plane still demands a battle (no silent capture)', () => {
+    let s = at('combatMove', 'germany', 5);
+    clear(s, 'karelia-ssr');
+    const bomber = addUnit(s, 'karelia-ssr', 'bomber', 'usa', { combatDone: true });
+    const ids = Array.from({ length: 8 }, () => addUnit(s, 'east-europe', 'armor', 'germany').id);
+    s = apply(s, { kind: 'move', unitIds: ids, path: ['east-europe', 'karelia-ssr'] }, 'germany');
+    expect(s.territories['karelia-ssr'].owner).toBe('russia'); // no walkover capture
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    expect(pendingBattleSpaces(s)).toContain('karelia-ssr');
+    s = apply(s, { kind: 'startBattle', territory: 'karelia-ssr' }, 'germany');
+    let guard = 0;
+    while (s.battle && guard++ < 50) {
+      const acts = A.legalActions(s, A.currentActor(s)!);
+      const cont = acts.find((a) => a.kind === 'continueBattle') ?? acts[0];
+      s = apply(s, cont, A.currentActor(s)!);
+    }
+    expect(s.territories['karelia-ssr'].units.some((u) => u.id === bomber.id)).toBe(false);
+    expect(s.territories['karelia-ssr'].owner).toBe('germany');
+  });
+
   it('capturing a capital seizes the IPC treasury', () => {
     let s = at('combatMove', 'germany', 13);
     clear(s, 'russia');

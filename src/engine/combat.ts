@@ -53,7 +53,15 @@ function logLosses(state: GameState, units: Unit[]): void {
  * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
 function fights(state: GameState, u: Unit): boolean {
   if (!isCombatUnit(u)) return false;
-  if (u.combatDone) return false; // finished its combat this turn (retreated / SBR done)
+  // `combatDone` means "already finished its combat THIS turn" (retreated / SBR
+  // flown). The flag is only cleared at the start of its OWNER's next turn, so an
+  // enemy piece carries a stale flag out of its own turn and into everyone else's.
+  // Honour it only for the power currently taking its turn — every unit on the
+  // board defends when attacked (spec §6.2; bombers defend at 1). Without the
+  // ownership test a defender that raided on its own turn silently sits out the
+  // battle and survives its side's defeat (live report: "Germany wins in Sinkiang,
+  // but a US bomber survives too"; same for East Europe the same turn).
+  if (u.combatDone && u.owner === state.current) return false;
   if (def(state.battle!.territory).water && UNITS[u.type].domain === 'land') return false;
   return true;
 }

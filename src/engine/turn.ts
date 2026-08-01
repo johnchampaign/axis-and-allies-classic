@@ -331,14 +331,17 @@ export function pendingBattleSpaces(state: GameState): string[] {
     );
     if (mine.length === 0) continue;
     const sbr = mine.some((u) => u.sbr);
-    // Exclude combatDone ENEMIES too (mirror the battle's fights() filter): a
-    // retreated enemy plane "flying home" cannot fight, so a space holding only
-    // such a plane must not demand a battle the machinery then refuses to fight —
-    // that mismatch livelocked the AI (startBattle → instant "Defenders hold" →
-    // still pending → forever). The stray plane resolves on its owner's turn
-    // (flags reset; it flies off or crashes under normal landing rules).
+    // Enemies are counted whatever their stale `combatDone` flag says — that flag
+    // only ever describes the acting power's own turn, and it is not cleared until
+    // its owner's next turn comes round. This filter used to drop combatDone
+    // enemies to stay in step with the battle's fights() filter (the mismatch
+    // livelocked the AI: startBattle → instant "Defenders hold" → still pending →
+    // forever); fights() now applies the same ownership test, so the two agree and
+    // a stale-flagged defender fights and dies normally instead of being skipped
+    // and surviving the capture (live report: US bomber left standing in East
+    // Europe / Sinkiang after Germany won there).
     const enemies = ts.units.filter(
-      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && u.type !== 'aaGun' && !u.combatDone,
+      (u) => isEnemy(u.owner, p) && u.type !== 'factory' && u.type !== 'aaGun',
     );
     if (sbr || enemies.length > 0) out.push(t);
   }
