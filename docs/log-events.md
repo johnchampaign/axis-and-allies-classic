@@ -23,7 +23,8 @@ entry is `secret`.
 | `combat.roll` | `{ territory, round, role: 'attack'\|'defend', dice, hits, subHits?, defenders? }` | one per fire step |
 | `combat.casualties` | `{ territory, losses: [{ owner, type, count }] }` | grouped unit losses |
 | `combat.aa` | `{ territory, hits, target: 'planes'\|'bombers'\|'overflight', planes? }` | AA fire (battle, SBR, overflight) |
-| `combat.bombard` | `{ territory, ships, hits }` | shore bombardment |
+| `combat.bombard` | `{ territory, ships, hits, rolls: number[] }` | shore bombardment; logged on a miss too |
+| `combat.bombardForfeit` | `{ territory, zone? }` or `{ territory, reason: 'noBattleship' }` | why an assault got no support shot |
 | `combat.sbr` | `{ territory, victim, damage, paid, bombers }` | strategic bombing raid |
 | `combat.subWithdraw` | `{ territory, to, count }` | submarine withdrawal |
 | `combat.retreat` | `{ territory, to }` | attacker retreat |

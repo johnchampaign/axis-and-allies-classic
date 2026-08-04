@@ -104,11 +104,19 @@ export function applyStartBattle(
   // this turn and are part of the assault (auto-included; spec §5.4 step 3)
   const bombardIds: number[] = [];
   let bombardForfeitZone: string | null = null; // a battleship was present but a naval battle forfeited its shot
+  let escortNoBombard = false; // an attacker warship was on hand, but not one that can bombard
   if (amphibious && !def(a.territory).water) {
     for (const zone of def(a.territory).connections) {
       if (!def(zone).water) continue;
       const bbs = terr(state, zone).units.filter((u) => u.type === 'battleship' && u.owner === actor);
-      if (bbs.length === 0) continue;
+      if (bbs.length === 0) {
+        // only battleships bombard in Classic (p. 15) — a carrier/sub escort still
+        // reads to the player as "my warship should be shooting" (live report)
+        if (terr(state, zone).units.some(
+          (u) => u.owner === actor && (u.type === 'carrier' || u.type === 'submarine'),
+        )) escortNoBombard = true;
+        continue;
+      }
       // shore bombardment is forfeited if a naval battle was fought in that zone
       // this turn (spec §5.4) — clearing the sea zone counts (live report: player
       // cleared the zone, then wondered why the battleship didn't bombard)
@@ -150,6 +158,11 @@ export function applyStartBattle(
     log(state, `Shore bombardment forfeited — a naval battle was fought in ${def(bombardForfeitZone).name} this turn (spec §5.4).`, {
       kind: 'combat.bombardForfeit', side: actor,
       payload: { territory: a.territory, zone: bombardForfeitZone },
+    });
+  } else if (bombardIds.length === 0 && escortNoBombard) {
+    log(state, 'No shore bombardment — only battleships can support an amphibious assault (spec §5.4).', {
+      kind: 'combat.bombardForfeit', side: actor,
+      payload: { territory: a.territory, reason: 'noBattleship' },
     });
   }
   runRound(state);
@@ -231,15 +244,19 @@ function runRound(state: GameState): void {
 
   // Round 1, amphibious: battleship support shots (spec §5.4 step 3)
   if (b.round === 1 && b.bombardIds.length > 0) {
-    let hits = 0;
-    for (const _ of b.bombardIds) if (rollDice(state, 1)[0] <= 4) hits++;
-    if (hits > 0) {
-      queueHits(state, 'defender', hits, defenders(state).map((u) => u.id), true);
-      log(state, `Shore bombardment: ${hits} hit(s).`, {
-        kind: 'combat.bombard', side: b.attacker,
-        payload: { territory: b.territory, ships: b.bombardIds.length, hits },
-      });
-    }
+    // Log the support shot even on a miss, with the faces: a battleship misses a
+    // third of the time, and a silent miss is indistinguishable from a battleship
+    // that never fired at all (live report: "warship sailed in with the transports
+    // and is not doing shore bombardment...?"). Same fix as the sub salvo below.
+    const faces: number[] = [];
+    for (const _ of b.bombardIds) faces.push(rollDice(state, 1)[0]);
+    const hits = faces.filter((r) => r <= 4).length;
+    if (hits > 0) queueHits(state, 'defender', hits, defenders(state).map((u) => u.id), true);
+    const ships = b.bombardIds.length;
+    log(state, `Shore bombardment: ${ships} battleship${ships > 1 ? 's' : ''} fire${ships > 1 ? '' : 's'} — ${ships} dice [${faces.join(', ')}], ${hits} hit(s).`, {
+      kind: 'combat.bombard', side: b.attacker,
+      payload: { territory: b.territory, ships, hits, rolls: faces },
+    });
   }
 
   if (attackers(state).length === 0 || defenders(state).length === 0) {
