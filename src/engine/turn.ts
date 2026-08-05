@@ -208,7 +208,10 @@ export function applyRocketAttack(
   return ok;
 }
 
-function bfsDistance(from: string, to: string, max: number): number | null {
+/** Board-graph distance from `from` to `to`, capped at `max` (null if farther).
+ *  Exported so legalActions can offer exactly the rocket shots this handler
+ *  accepts — the two must agree, or the UI shows a button the engine rejects. */
+export function bfsDistance(from: string, to: string, max: number): number | null {
   if (from === to) return 0;
   let frontier = [from];
   const seen = new Set([from]);

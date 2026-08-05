@@ -7,7 +7,7 @@ import {
   airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy,
   isEnemyOccupied, isFriendlySpace, terr,
 } from './helpers';
-import { pendingBattleSpaces, unitCost } from './turn';
+import { bfsDistance, pendingBattleSpaces, unitCost } from './turn';
 import type { Action, GameState, Power, Unit, UnitType } from './types';
 
 const MAX_ACTIONS = 120;
@@ -234,7 +234,34 @@ function combatActions(state: GameState, actor: Power): Action[] {
       }
     }
   }
+  out.push(...rocketActions(state, actor));
   if (pending.length === 0) out.push({ kind: 'endPhase' });
+  return out;
+}
+
+/** Rocket shots available right now (spec §8 tech 2: ONE free rocket attack per
+ *  turn — pick an AA gun of yours within 3 spaces of an enemy industrial complex,
+ *  roll 1 die, that power pays the bank). Offered during the combat phase, which
+ *  is when applyRocketAttack accepts them. Without this the shot was unreachable
+ *  for a human: the engine implemented it but nothing ever surfaced the option
+ *  (live report — a Russian player with rockets and an AA gun in Karelia could
+ *  see Germany two spaces away and had no way to fire). */
+function rocketActions(state: GameState, actor: Power): Action[] {
+  if (!state.techs[actor].includes('rockets') || state.rocketsFiredThisTurn) return [];
+  const guns = Object.entries(state.territories)
+    .filter(([, ts]) => ts.units.some((u) => u.type === 'aaGun' && u.owner === actor))
+    .map(([t]) => t);
+  if (guns.length === 0) return [];
+  const complexes = Object.entries(state.territories)
+    .filter(([, ts]) => ts.units.some((u) => u.type === 'factory' && isEnemy(u.owner, actor)))
+    .map(([t]) => t);
+  const out: Action[] = [];
+  for (const from of guns) {
+    for (const target of complexes) {
+      if (bfsDistance(from, target, 3) === null) continue;
+      out.push({ kind: 'rocketAttack', from, target });
+    }
+  }
   return out;
 }
 

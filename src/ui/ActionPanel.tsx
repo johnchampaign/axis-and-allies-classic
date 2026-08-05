@@ -674,10 +674,14 @@ function MovePanel({
 function CombatPanel({ view, legal, act }: { view: GameState; legal: Action[]; act: (a: Action | Action[]) => void }) {
   const battles = legal.filter((a) => a.kind === 'startBattle') as Extract<Action, { kind: 'startBattle' }>[];
   const offloads = legal.filter((a) => a.kind === 'offload') as Extract<Action, { kind: 'offload' }>[];
+  // Rockets (spec §8, tech 2) fire in this phase and nowhere else. The engine has
+  // always accepted the shot; before this the UI never offered it, so a player who
+  // developed Rockets simply could not use them (live report).
+  const rockets = legal.filter((a) => a.kind === 'rocketAttack') as Extract<Action, { kind: 'rocketAttack' }>[];
   return (
     <div style={box}>
       <b>Conduct combat</b>
-      {battles.length === 0 && offloads.length === 0 && <div>No battles pending.</div>}
+      {battles.length === 0 && offloads.length === 0 && rockets.length === 0 && <div>No battles pending.</div>}
       {battles.map((a) => (
         <button key={a.territory} style={primary} onClick={() => act(a)}>
           Resolve battle: {tname(a.territory)}
@@ -688,6 +692,20 @@ function CombatPanel({ view, legal, act }: { view: GameState; legal: Action[]; a
           Unload transport #{a.transportId} → {tname(a.to)}
         </button>
       ))}
+      {rockets.length > 0 && (
+        <div style={{ marginTop: 8, borderTop: '1px solid #445', paddingTop: 8 }}>
+          <b>🚀 Rocket attack</b>
+          <div style={{ fontSize: 12, opacity: 0.85, margin: '2px 0 4px' }}>
+            One free shot per turn: an AA gun of yours fires at an enemy industrial
+            complex within 3 spaces. Roll 1 die — that power pays the bank that many IPCs.
+          </div>
+          {rockets.map((a, i) => (
+            <button key={i} style={btn} onClick={() => act(a)}>
+              Fire from {tname(a.from)} → {tname(a.target)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
