@@ -1,7 +1,25 @@
 // HTTP client for useGame + chat. The UI never owns rules: it renders the
 // server's view and submits actions; the engine validates everything.
+import { withDeadline } from 'digital-boardgame-framework/client';
 import type { GameClientApi, MessagingClientApi } from 'digital-boardgame-framework/client';
 import type { Action, GameState } from '../engine/types';
+
+// Every request is deadline-wrapped. The GameClientApi contract requires each
+// method to settle in bounded time: a fetch that HANGS (never resolves, never
+// rejects) is worse than one that fails, because useGame pauses background polling
+// while it's your turn and awaits submit() — so one hung request freezes the whole
+// session with no error to react to, and the server's on-read AI self-heal is never
+// reached because it lives inside the request that never returns.
+//
+// useGame races its own backstop around fetch/submit, but ONLY those two; undo,
+// peekUndo, report and chat are called directly from the UI and had no protection
+// at all. Wrapping here is also what actually ABORTS the request and frees the
+// socket, which the backstop cannot do.
+//
+// Reads are quick; writes are slower (a submit can run server-side work before
+// responding) — hence the asymmetric budgets the framework documents.
+const READ_MS = 20_000;
+const WRITE_MS = 60_000;
 
 export type AaClient = GameClientApi<GameState, Action> & {
   /** Revert the last deterministic action; resolves with the refreshed view and
@@ -38,18 +56,28 @@ export function makeClient(
   }
   type View = { view: GameState; yourTurn: boolean; turn: number; gameOver: boolean; you?: string };
   return {
-    fetch: () => fetch(`${base}${q}`).then((r) => j<View>(r)),
-    submit: (action) =>
-      fetch(`${base}/submit${q}`, {
+    fetch: () => withDeadline(
+      (signal) => fetch(`${base}${q}`, { signal }).then((r) => j<View>(r)),
+      READ_MS, 'Loading the game',
+    ),
+    submit: (action) => withDeadline(
+      (signal) => fetch(`${base}/submit${q}`, {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         // ranked: carry the player's hub identity so the seat is attributed
         body: JSON.stringify({ action, identityToken: getIdentityToken?.() }),
       }).then((r) => j<View>(r)),
-    legalActions: () => fetch(`${base}/legal${q}`).then((r) => j<Action[]>(r)),
-    report: (submission) =>
-      fetch(`${base}/report${q}`, {
+      WRITE_MS, 'Your move',
+    ),
+    legalActions: () => withDeadline(
+      (signal) => fetch(`${base}/legal${q}`, { signal }).then((r) => j<Action[]>(r)),
+      READ_MS, 'Loading moves',
+    ),
+    report: (submission) => withDeadline(
+      (signal) => fetch(`${base}/report${q}`, {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         // tag every report so triage can filter ours out of the shared
         // dbf_reports table: /api/reports?category=axis-allies. We also stamp a
@@ -61,11 +89,19 @@ export function makeClient(
           message: `${submission.message}${reporterMark()}`,
         }),
       }).then((r) => j<{ reportId: string }>(r)),
-    undo: () =>
-      fetch(`${base}/undo${q}`, { method: 'POST' })
+      WRITE_MS, 'Sending your report',
+    ),
+    undo: () => withDeadline(
+      (signal) => fetch(`${base}/undo${q}`, { method: 'POST', signal })
         .then((r) => j<View & { canUndo: boolean }>(r))
         .then((d) => ({ view: d.view, canUndo: d.canUndo })),
-    peekUndo: () => fetch(`${base}/undo${q}`).then((r) => j<{ canUndo: boolean }>(r)).then((d) => d.canUndo),
+      WRITE_MS, 'Undoing your move',
+    ),
+    peekUndo: () => withDeadline(
+      (signal) => fetch(`${base}/undo${q}`, { signal })
+        .then((r) => j<{ canUndo: boolean }>(r)).then((d) => d.canUndo),
+      READ_MS, 'Checking undo',
+    ),
   };
 }
 
@@ -117,7 +153,12 @@ export type MyReport = {
 /** Reports this browser filed (matched by reporter marker), newest first. */
 export async function listMyReports(): Promise<MyReport[]> {
   const marker = reporterMarker(reporterId());
-  const rows = (await fetch('/api/reports?category=axis-allies').then((r) => r.json())) as MyReport[];
+  // NOTE: dbf_reports is shared across sibling games, so the category filter is
+  // what keeps this to ours — an unfiltered read pulls every game's reports.
+  const rows = (await withDeadline(
+    (signal) => fetch('/api/reports?category=axis-allies', { signal }).then((r) => r.json()),
+    READ_MS, 'Loading your reports',
+  )) as MyReport[];
   return rows
     .filter((r) => typeof r.message === 'string' && r.message.includes(marker))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
@@ -126,13 +167,19 @@ export async function listMyReports(): Promise<MyReport[]> {
 export function makeChatClient(gameId: string, token: string): MessagingClientApi {
   const base = `/api/games/${encodeURIComponent(gameId)}/messages?t=${encodeURIComponent(token)}`;
   return {
-    listMessages: () => fetch(base).then((r) => r.json()),
-    postMessage: (body: string) =>
-      fetch(base, {
+    listMessages: () => withDeadline(
+      (signal) => fetch(base, { signal }).then((r) => r.json()),
+      READ_MS, 'Loading chat',
+    ),
+    postMessage: (body: string) => withDeadline(
+      (signal) => fetch(base, {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body }),
       }).then((r) => r.json()),
+      WRITE_MS, 'Sending your message',
+    ),
   };
 }
 
