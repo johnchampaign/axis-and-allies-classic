@@ -10,6 +10,7 @@ import { jsonCodec } from 'digital-boardgame-framework';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { axisAndAlliesAdapter } from '../../src/engine/adapter';
 import type { Action, GameState, Power } from '../../src/engine/types';
+import { isAxisAndAlliesState } from './reportGuard';
 
 export interface Env {
   SUPABASE_URL?: string;
@@ -80,6 +81,56 @@ export async function recentSnapshots(
   return (data ?? []).map((r) => ({ turn: r.turn as number, state: r.state as string }));
 }
 
+/** One report with its authoritative state, for triage. The list endpoint strips
+ *  the snapshots, so a "my game is stuck" report (e.g. bxa8we65mzwacr5e) could not
+ *  be diagnosed at all without this — the wedged state is stored and unreachable.
+ *
+ *  Trust tier (CLAUDE.md agent-collaboration principles): an A&A state is non-PII
+ *  admin data — Classic has no hidden information, `viewFor` is the identity, and
+ *  both players already see the whole board — so it is a public read. `userAgent`
+ *  and `clientLog` stay server-side: those DO fingerprint a reporter.
+ *
+ *  SHARED-TABLE GUARD: dbf_reports is the shared framework project, holding rows
+ *  from sibling games — and some of those DO have hidden information (War of the
+ *  Ring's Fellowship position). Returning a snapshot by report id alone would leak
+ *  another game's secret state. Legacy A&A rows predate the `appId` stamp and have
+ *  app_id = null, so a label check cannot stand alone; we also require the snapshot
+ *  to DECODE AS an A&A state. A row failing either test returns metadata only. */
+interface ReportDetailRow {
+  report_id: string;
+  app_id: string | null;
+  server_snapshot: string | null;
+  reporter_view: string | null;
+  [column: string]: unknown;
+}
+
+export async function reportDetail(
+  env: Env, reportId: string,
+): Promise<{ row: Record<string, unknown>; snapshot: string | null; reason?: string } | null> {
+  const { data, error } = await getSupabase(env)
+    .from('dbf_reports')
+    // NOTE: user_agent and client_log are deliberately NOT selected.
+    .select('report_id,game_id,reporter_side,turn_number,severity,category,message,client_build,created_at,resolution,app_id,server_snapshot,reporter_view')
+    .eq('report_id', reportId)
+    .limit(1);
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as ReportDetailRow[];
+  const r = rows[0];
+  if (!r) return null;
+
+  const encoded = r.server_snapshot || r.reporter_view || '';
+  const { server_snapshot: _s, reporter_view: _v, ...meta } = r;
+  const appId = r.app_id;
+  if (appId && appId !== 'axis-and-allies') {
+    return { row: meta, snapshot: null, reason: `report belongs to app "${appId}"` };
+  }
+  if (!encoded) return { row: meta, snapshot: null, reason: 'no stored snapshot' };
+  if (!isAxisAndAlliesState(encoded)) {
+    return { row: meta, snapshot: null, reason: 'snapshot is not an Axis & Allies state' };
+  }
+  return { row: meta, snapshot: encoded };
+}
+
 function makeNotifier(env: Env) {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM) return new NoopNotifier();
   return new ResendNotifier({ apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM });
@@ -114,6 +165,13 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
     // vs-AI — through this server (no local-only path; CLAUDE.md), so this single
     // beacon already counts them all. We deliberately do NOT also call
     // recordPlay() client-side for hotseat/AI, which would double-count.
+    // Stamp every bug report with this app's id (BugReportRow.appId). The reports
+    // table lives in the SHARED framework Supabase project, so without this every
+    // report lands with app_id = null and triage cannot tell an A&A report from a
+    // War of the Ring one — /api/reports currently returns all 751 rows from every
+    // game on the project. Only `playBeacon.appId` was set, which the framework
+    // uses for the games-played counter, not for report attribution.
+    appId: 'axis-and-allies',
     playBeacon: { appId: 'axis-and-allies' },
     gameUrl: (gameId, token) =>
       `${base}/?g=${encodeURIComponent(gameId)}&t=${encodeURIComponent(token)}`,
