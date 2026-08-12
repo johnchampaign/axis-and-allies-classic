@@ -323,14 +323,16 @@ function mobilizeActions(state: GameState, actor: Power): Action[] {
   for (const type of types) {
     const domain = UNITS[type].domain;
     if (type === 'factory') {
-      let added = 0;
+      // EVERY territory held since turn start is a legal site (spec §9.2), and
+      // there are only a few dozen — no combinatorial blowup to truncate against.
+      // This used to stop after the first 3 in list order, which silently hid the
+      // good sites: a live report caught the UK building in Egypt with Germany
+      // next door because South Africa was never on the menu.
       for (const t of state.turnStartFriendly) {
-        if (added >= 3) break;
         if (def(t).water || terr(state, t).owner !== actor) continue;
         if (terr(state, t).units.some((u) => u.type === 'factory')) continue;
         if (def(t).ipc === 0) continue; // legal but pointless; keep options useful
         out.push({ kind: 'place', type, territory: t });
-        added++;
       }
       continue;
     }

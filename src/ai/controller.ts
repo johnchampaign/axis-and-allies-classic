@@ -47,9 +47,11 @@ const standard: PlayerController<GameState, Action, Power> = {
  *    'standard'    original
  *    'standard@2'  2026-07-26, noncombat garrison fix
  *    'standard@3'  2026-07-26, sealift-feasibility gate
+ *    'standard@4'  2026-08-12, complex siting (full site list + exposure)
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
   'standard@2': standard,
   'standard@3': standard,
+  'standard@4': standard,
 };

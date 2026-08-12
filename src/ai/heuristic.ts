@@ -272,8 +272,82 @@ function embarkCoast(state: GameState, p: Power, from: string): string | null {
   return best?.t ?? null;
 }
 
+/** Rough measure of what the enemy could throw at `t` on its very next turn:
+ *  ground within marching range (armor blitzes 2) or already afloat next door,
+ *  plus — only if some ground can actually get there — supporting air and shore
+ *  bombardment. Air alone never takes a territory (spec §6.6: capture needs a
+ *  surviving LAND unit), so a spot no enemy soldier can reach reads as zero
+ *  pressure however many bombers are in the neighbourhood. */
+function enemyPressureOn(state: GameState, t: string, p: Power): number {
+  let ground = 0;
+  let support = 0;
+  // marching ground: land-only BFS out to armor's move. One turn, deliberately:
+  // a two-turn horizon was measured and it made the AI build so far back that
+  // decisive games fell from 12/12 to 6/12 in the all-heuristic tournament.
+  const landDist = new Map<string, number>([[t, 0]]);
+  let frontier = [t];
+  for (let d = 1; d <= 2; d++) {
+    const next: string[] = [];
+    for (const cur of frontier) {
+      for (const n of def(cur).connections) {
+        if (def(n).water || landDist.has(n)) continue;
+        landDist.set(n, d);
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  for (const [n, d] of landDist) {
+    if (d === 0) continue;
+    for (const u of terr(state, n).units) {
+      if (!isEnemy(u.owner, p) || !isCombat(u)) continue;
+      if (UNITS[u.type].domain === 'land' && UNITS[u.type].move >= d) ground += atkVal(u);
+    }
+  }
+  // already afloat next door: cargo can come ashore, escorts can bombard it in
+  for (const n of def(t).connections) {
+    if (!def(n).water) continue;
+    for (const u of terr(state, n).units) {
+      if (!isEnemy(u.owner, p) || !isCombat(u)) continue;
+      if (UNITS[u.type].domain === 'land') ground += atkVal(u);
+      else if (UNITS[u.type].canBombard) support += atkVal(u);
+    }
+  }
+  if (ground === 0) return 0;
+  // air, which crosses water freely
+  for (const [n, ts] of Object.entries(state.territories)) {
+    if (n === t) continue;
+    for (const u of ts.units) {
+      if (!isEnemy(u.owner, p) || UNITS[u.type].domain !== 'air') continue;
+      if (withinSteps(n, t, UNITS[u.type].move)) support += atkVal(u);
+    }
+  }
+  return ground + support;
+}
+
+/** Defence currently standing in `t` (ours and our partners'). */
+function holdStrength(state: GameState, t: string, p: Power): number {
+  return terr(state, t).units
+    .filter((u) => !isEnemy(u.owner, p) && isCombat(u))
+    .reduce((s, u) => s + defVal(u), 0);
+}
+
+/** How badly `t` is outgunned as a complex site. A lost complex is worse than no
+ *  complex: 15 IPC handed over AND a production centre planted on our own soil for
+ *  the rest of the game (live report: UK built in Egypt with Germany next door in
+ *  Libya, so Germany spent the rest of the match building 2 infantry a turn in
+ *  Africa off it). Graded rather than a veto — a forward site we can actually
+ *  garrison is still the right place to build, and refusing all of them measurably
+ *  drains the AI's offence (all-heuristic tournament: decisive games 11/12 -> 7/12
+ *  when this was a hard "no"). */
+function factoryExposure(state: GameState, t: string, p: Power): number {
+  return Math.max(0, enemyPressureOn(state, t, p) - holdStrength(state, t, p));
+}
+
 /** A worthwhile site for a new industrial complex: owned since turn start,
- * no factory yet, real income, reasonably near the enemy. */
+ * no factory yet, real income, reasonably near the enemy. (Gating the BUY on
+ * defensibility too was measured and made the AI passive — decisive games
+ * 11/12 -> 5/12. Siting is where exposure belongs; see mobilize().) */
 function goodFactorySite(state: GameState, p: Power): boolean {
   for (const t of state.turnStartFriendly) {
     if (def(t).water || def(t).ipc < 2) continue;
@@ -1100,7 +1174,18 @@ function mobilize(state: GameState, p: Power): Action {
   let best: { a: Action; score: number } | null = null;
   for (const a of places) {
     let score = -distanceToEnemy(state, a.territory, p);
-    if (a.type === 'factory') score += def(a.territory).ipc * 3;
+    if (a.type === 'factory') {
+      score += def(a.territory).ipc * 3;
+      // ...and away from ground the enemy can overrun next turn. Without this the
+      // "near the enemy" term above put the complex on the most exposed square on
+      // the board and gift-wrapped it (see factoryExposure).
+      score -= Math.min(60, factoryExposure(state, a.territory, p) * 4);
+      // Prefer a site whose output can WALK to a front. Otherwise equal-looking
+      // sites are decided by iteration order and the complex can land on an island
+      // whose every unit then needs a boat (the reported alternative to Egypt was
+      // South Africa, which marches north through Africa).
+      if (distanceToEnemyByLand(state, a.territory, p) < 99) score += 2;
+    }
     if (a.seaZone) {
       const openWater = def(a.seaZone).connections.some((n) => def(n).water);
       if (!openWater) score -= 100; // a lake: last resort only
