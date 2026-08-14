@@ -889,13 +889,50 @@ function combatPhase(state: GameState, p: Power): Action {
   return { kind: 'endPhase' };
 }
 
+/** How many of our own fighters we would strand by taking `carrier` as a loss.
+ * A carrier is not just a 1-attack ship, it is the only runway in the ocean:
+ * fighters over deck capacity are destroyed (spec §4.3 / rulebook p. 14) — the
+ * defending side's the instant the battle ends, the attacker's at the end of
+ * noncombat. Live report: Japan hit the Hawaii sea zone with four fighters,
+ * gave up the carrier because it rolled the weakest die, and three fighters
+ * went down with it. */
+function fightersStranded(state: GameState, zone: string, carrier: Unit, defending: boolean): number {
+  const ts = terr(state, zone);
+  const side = SIDE_OF[carrier.owner];
+  // capacity is a per-SIDE pool in the engine (turn.ts `fighterOverflow`), so
+  // an ally's deck counts and the enemy's carriers in the same zone do not
+  const fighters = ts.units.filter((u) => u.type === 'fighter' && SIDE_OF[u.owner] === side);
+  const seatsAfter =
+    (ts.units.filter((u) => u.type === 'carrier' && SIDE_OF[u.owner] === side).length - 1) * 2;
+  const homeless = fighters.length - seatsAfter;
+  if (homeless <= 0) return 0;
+  if (defending) return homeless; // defenders never get a move to fly away
+  // The attacker still has its noncombat move: only count the fighters with no
+  // reachable airfield or other deck once this carrier is gone. Pull the ship
+  // out of the zone for the check so `hasLandingSpot` cannot answer "you can
+  // land on the very carrier you are about to sink" — restored immediately.
+  const i = ts.units.indexOf(carrier);
+  ts.units.splice(i, 1);
+  try {
+    let stuck = 0;
+    for (const u of fighters) {
+      if (!hasLandingSpot(state, u, zone, airRange(state, u) - u.movesUsed)) stuck++;
+    }
+    return Math.min(homeless, stuck);
+  } finally {
+    ts.units.splice(i, 0, carrier);
+  }
+}
+
 /** Pick this round's casualties: lose the pieces pulling the LEAST weight in the
  * fight, not simply the cheapest ones. Cheapest-first threw away the wrong unit
  * whenever price and combat value disagree — a bomber costs 15 but defends at 1,
  * a fighter costs 12 and defends at 4, so the cheap-first rule burned the fighter
  * and kept a piece that barely rolls (live report, Kwangtung). Order:
  *   1. weakest in its CURRENT role (defence value when the hits land on the
- *      defending side, attack value when they land on the attackers),
+ *      defending side, attack value when they land on the attackers), plus what
+ *      the loss drags down with it — a carrier that leaves fighters homeless
+ *      costs its deck's worth of planes, not its own single die,
  *   2. then the ships carrying nothing — a loaded transport drags its cargo
  *      down with it (engine `killUnit`), so an empty one is the better loss,
  *   3. then cheapest, so the surviving force keeps the most board value. */
@@ -906,11 +943,21 @@ function casualtyChoice(state: GameState, legal: Action[]): Action {
     .map((id) => terr(state, b.territory).units.find((u) => u.id === id))
     .filter((u): u is Unit => !!u);
   if (units.length < ph.hits) return legal[0]; // engine will re-prune; take its list
-  const power = (u: Unit) => (ph.side === 'defender'
-    ? (u.type === 'fighter' && state.techs[u.owner].includes('jetPower') ? 5 : defVal(u))
-    : atkVal(u));
+  const water = def(b.territory).water;
+  const power = (u: Unit) => {
+    const base = ph.side === 'defender'
+      ? (u.type === 'fighter' && state.techs[u.owner].includes('jetPower') ? 5 : defVal(u))
+      : atkVal(u);
+    // one stranded fighter is worth a bit more than a fighter's own die (12 IPC
+    // and a 3/4 roll), so a carrier holding even one plane up outranks losing
+    // the plane directly and the ordering stops sinking its own runway
+    if (!water || u.type !== 'carrier') return base;
+    return base + 4 * fightersStranded(state, b.territory, u, ph.side === 'defender');
+  };
+  // score once per unit, not once per comparison — the carrier check walks the map
+  const score = new Map(units.map((u) => [u.id, power(u)]));
   const ordered = [...units].sort((x, y) =>
-    power(x) - power(y) ||
+    score.get(x.id)! - score.get(y.id)! ||
     x.cargo.length - y.cargo.length ||
     UNITS[x.type].cost - UNITS[y.type].cost);
   return { kind: 'chooseCasualties', unitIds: ordered.slice(0, ph.hits).map((u) => u.id) };
