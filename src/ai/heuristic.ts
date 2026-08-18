@@ -247,8 +247,24 @@ function isSeaPower(state: GameState, p: Power): boolean {
 
 /** A capital we need but cannot march to (enemy-held, island or sea-locked):
  * the reason ANY power — not just island powers — may need transports.
- * Covers liberating London for the Allies and invading Tokyo alike. */
+ * Covers liberating London for the Allies and invading Tokyo alike.
+ *
+ * ...but only for a power that is free to go after it. A power with a live LAND
+ * border on an enemy fights that war; it does not fund an ocean invasion of a
+ * capital on the far side of the world. Ungated, this handed every land power a
+ * standing excuse to build boats and march toward a port, because an enemy's own
+ * island capital (Tokyo) is by definition never land-reachable. Live report
+ * p08zrutarm5tv6b5: in ROUND 2, with eight German armor and eight German
+ * infantry staged one space from Moscow, AI Russia spent 24 of its 27 IPCs on
+ * three transports and parked them in the Baltic — a German lake — because it
+ * had "decided" to invade Tokyo. The crippled/dominant endgame is exempt: that
+ * grind wins by massing boats against a stacked capital whatever the land map
+ * looks like (the tuned Tokyo close-out depends on it). */
 function sealiftCapital(state: GameState, p: Power): string | null {
+  const foeSide = SIDE_OF[p] === 'allies' ? 'axis' : 'allies';
+  const grindingDown = enemyIncome(state, p) <= 12 ||
+    sideStrength(state, SIDE_OF[p]) >= 2 * sideStrength(state, foeSide);
+  if (!isSeaPower(state, p) && !grindingDown) return null;
   for (const q of TURN_ORDER) {
     const cap = CAPITAL_OF[q];
     const owner = terr(state, cap).owner;
@@ -814,8 +830,17 @@ function navalAttack(state: GameState, p: Power): Action | null {
     const enemies = ts.units.filter((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain !== 'land');
     if (enemies.length === 0) continue;
     const defense = enemies.reduce((s, u) => s + Math.max(defVal(u), 0.5), 0);
-    const committed = ts.units
+    // Count our OWN air already flown into this zone as committed strength.
+    // Flying into a hostile space sets `fought`, which drops the plane out of
+    // airSupport() — so without this the ratio COLLAPSED after the first
+    // fighter went in and the rest of the strike stayed home, leaving one
+    // plane alone against a fleet ("leaving Fighters and/or Armors alone ...
+    // is really bad play").
+    const shipsHere = ts.units
       .filter((u) => u.owner === p && isCombat(u) && UNITS[u.type].domain === 'sea')
+      .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+    const committed = ts.units
+      .filter((u) => u.owner === p && isCombat(u) && UNITS[u.type].domain !== 'land')
       .reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
     // staging zones within 2 sailing moves (intermediates must be clear —
     // ships cannot pass through enemy-occupied zones)
@@ -851,14 +876,21 @@ function navalAttack(state: GameState, p: Power): Action | null {
     }
     const air = airSupport(state, p, zone);
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
-    if (from.length === 0 && (committed === 0 || air.length === 0)) continue;
+    if (from.length === 0 && air.length === 0) continue; // nothing left to send
     if ((committed + reinforcements + airStrength) / defense >= prof.margin) {
       const next = from[0];
       if (next) {
         return { kind: 'move', unitIds: next.ships.map((u) => u.id), path: next.path };
       }
-      // ships are in — fly the air strike
-      const committedHere = ts.units.some((u) => u.owner === p && u.fought);
+      // Ships lead, air follows once they are in. But with NO ships to send at
+      // all, land-based air alone is a perfectly good strike: a sea zone is
+      // cleared, not captured, so nothing of ours has to survive on the water.
+      // Without this a power whose navy was sunk could never break a blockade
+      // of its own port — live report: a single German battleship sat in the
+      // North Sea while the UK, its only harbour shut, stockpiled five idle
+      // aircraft in London (and, being "bottled up", spent every IPC buying
+      // MORE air it would never fly).
+      const committedHere = shipsHere === 0 || ts.units.some((u) => u.owner === p && u.fought);
       if (committedHere && air.length > 0) {
         const a = air[0];
         const range = airRange(state, a.unit) - a.unit.movesUsed;

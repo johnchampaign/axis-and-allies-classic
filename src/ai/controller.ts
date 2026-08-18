@@ -49,6 +49,8 @@ const standard: PlayerController<GameState, Action, Power> = {
  *    'standard@3'  2026-07-26, sealift-feasibility gate
  *    'standard@4'  2026-08-12, complex siting (full site list + exposure)
  *    'standard@5'  2026-08-14, stops sinking its own carrier out from under its fighters
+ *    'standard@6'  2026-08-18, breaks port blockades with land-based air, and land
+ *                  powers stop funding ocean invasions instead of the war next door
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -56,4 +58,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@3': standard,
   'standard@4': standard,
   'standard@5': standard,
+  'standard@6': standard,
 };
