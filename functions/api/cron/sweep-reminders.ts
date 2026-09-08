@@ -12,7 +12,7 @@ const handler: PagesFunction<Env> = async (ctx) => {
       return json({ error: 'unauthorized' }, 401);
     }
     const server = makeServer(request, env, { notify: true });
-    const result = await server.sweepTurnReminders({ olderThanMs: OLDER_THAN_MS });
+    const result = await server.sweepTurnReminders({ olderThanMs: OLDER_THAN_MS, budgetMs: 20_000 });
     return json({ ok: true, ...result });
   } catch (e) {
     return fail(e);
