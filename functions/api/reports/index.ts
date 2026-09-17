@@ -11,6 +11,7 @@
 import { fail, json, makeServer, type Env } from '../../_lib/gameServer';
 
 const APP_ID = 'axis-and-allies';
+const OUR_CATEGORIES = ['axis-allies', 'axis-allies-gamelog'];
 // Rows filed before the appId stamp have app_id = null; recognise those by the
 // category this game uses ('axis-allies', 'axis-allies-gamelog').
 const isOurs = (r: { appId?: string; category?: string }): boolean =>
@@ -22,18 +23,26 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     const u = new URL(request.url);
     const flag = u.searchParams.get('unresolved');
     const server = makeServer(request, env);
-    const rows = await server.listReports({
+    const base = {
       // '1' as well as 'true' — every sibling game and every routine sends
       // unresolved=1; accepting only 'true' silently returned the full list.
       unresolved: flag === '1' || flag === 'true' ? true : undefined,
       severity: u.searchParams.get('severity') ?? undefined,
-      category: u.searchParams.get('category') ?? undefined,
       gameId: u.searchParams.get('gameId') ?? undefined,
       since: u.searchParams.get('since') ?? undefined,
       bodies: false, // a listing never returns the blobs — don't make the DB read them
-    });
-    // ?app=* widens to every game on the shared table (cross-game triage).
-    const scoped = u.searchParams.get('app') === '*' ? rows : rows.filter(isOurs);
+    };
+    const category = u.searchParams.get('category') ?? undefined;
+    const wide = u.searchParams.get('app') === '*'; // cross-game triage
+    // Scope IN THE QUERY, not after it: PostgREST caps a response at 1000 rows
+    // and the shared table holds more than that, so filtering afterwards only
+    // ever saw the newest 1000 rows of every game (an "unresolved" listing came
+    // back LARGER than the unfiltered one). This game files under exactly two
+    // categories, which also covers legacy rows whose app_id is null.
+    const cats = category ? [category] : wide ? [undefined] : OUR_CATEGORIES;
+    const lists = await Promise.all(cats.map((c) => server.listReports({ ...base, category: c })));
+    const rows = lists.flat().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const scoped = wide ? rows : rows.filter(isOurs);
     return json(scoped.map((r) => ({
       reportId: r.reportId,
       gameId: r.gameId,
