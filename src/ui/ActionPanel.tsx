@@ -18,10 +18,11 @@ const TECH_INFO: Record<Tech, { label: string; desc: string }> = {
   heavyBombers: { label: 'Heavy Bombers', desc: 'Your bombers roll 3 dice instead of 1 — both in battle and in strategic bombing raids.' },
 };
 
-const TERR = Object.fromEntries(
-  (territoriesJson.territories as { id: string; name: string; water: boolean; connections: string[] }[])
-    .map((t) => [t.id, t]),
-);
+const TERR: Record<string, { id: string; name: string; water: boolean; ipc: number; connections: string[] }> =
+  Object.fromEntries(
+    (territoriesJson.territories as { id: string; name: string; water: boolean; ipc: number; connections: string[] }[])
+      .map((t) => [t.id, t]),
+  );
 const UNITS = unitsJson.units as Record<UnitType, { cost: number; move: number; domain: string }>;
 const BUYABLE: UnitType[] = ['infantry', 'armor', 'fighter', 'bomber', 'transport', 'submarine', 'carrier', 'battleship', 'aaGun', 'factory'];
 
@@ -182,7 +183,7 @@ export function ActionPanel({
         <MovePanel view={view} you={you} act={act} selected={selected} selectedUnits={selectedUnits} />
       )}
       {view.phase === 'combat' && <CombatPanel view={view} legal={legal} act={act} />}
-      {view.phase === 'mobilize' && <MobilizePanel view={view} act={act} selected={selected} busy={busy} />}
+      {view.phase === 'mobilize' && <MobilizePanel view={view} you={you} act={act} selected={selected} busy={busy} />}
       {confirmCrash ? (
         <div style={{ ...box, border: '2px solid #c0392b' }}>
           <b>⚠ Aircraft will be lost!</b>
@@ -819,55 +820,121 @@ function labelBattleAction(a: Action, battleTerritory: string): string {
   }
 }
 
-function MobilizePanel({ view, act, selected, busy }: { view: GameState; act: (a: Action | Action[]) => void; selected: string | null; busy: boolean }) {
+function MobilizePanel({ view, you, act, selected, busy }: {
+  view: GameState; you: Power; act: (a: Action | Action[]) => void; selected: string | null; busy: boolean;
+}) {
   const pending = view.purchases;
   const counts = new Map<UnitType, number>();
   for (const p of pending) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
-  const selectedIsWater = !!selected && TERR[selected]?.water;
-  // ships placed into a selected SEA ZONE go through an adjacent usable factory (spec §9.2)
-  const factoriesForZone = selectedIsWater
-    ? (TERR[selected!]?.connections ?? []).filter((t) => view.turnStartFactories.includes(t))
-    : [];
+
+  // Every complex this power can actually build at right now (spec §9.2–9.3):
+  // owned since turn start, still ours, and under its production cap if limited.
+  // Mirrors the engine so we never offer a button the server will reject; the
+  // engine stays the authority.
+  const sites = view.turnStartFactories.filter((t) => {
+    const ts = view.territories[t];
+    if (!ts || ts.owner !== you) return false;
+    const f = ts.units.find((u) => u.type === 'factory' && u.owner === you);
+    if (!f) return false;
+    if (f.factoryLimited && (view.placedThisTurn[t] ?? 0) >= Math.max(1, TERR[t]?.ipc ?? 0)) return false;
+    return true;
+  });
+  // ships go in a friendly sea zone next to one of those complexes — ALL of them,
+  // not just the first: West US touches both the Gulf and the Pacific.
+  const isEnemyHere = (tid: string) =>
+    view.territories[tid]?.units.some((u) => SIDE_OF[u.owner] !== SIDE_OF[you]) ?? false;
+  const seaSites: { factory: string; zone: string }[] = [];
+  for (const f of sites) {
+    for (const z of TERR[f]?.connections ?? []) {
+      if (TERR[z]?.water && !isEnemyHere(z)) seaSites.push({ factory: f, zone: z });
+    }
+  }
+
+  // Destinations for one pending unit type, best-first: the territory the player
+  // has selected sorts to the front, but the list NEVER depends on there being a
+  // selection — clicking a territory toggles it off again, and a panel that only
+  // works while something is selected is a dead end with no error to react to
+  // (a live report: "couldn't place carriers in East US", 2026-09-19).
+  const targets = (t: UnitType): { key: string; label: string; action: Action }[] => {
+    if (t === 'factory') {
+      // legal anywhere owned since turn start — far too many to list, so this one
+      // stays selection-driven (and says so when nothing is selected).
+      if (!selected || TERR[selected]?.water) return [];
+      const ts = view.territories[selected];
+      if (ts?.owner !== you || !view.turnStartFriendly.includes(selected)) return [];
+      if (ts.units.some((u) => u.type === 'factory')) return [];
+      return [{
+        key: selected, label: `place in ${tname(selected)}`,
+        action: { kind: 'place', type: t, territory: selected },
+      }];
+    }
+    if (UNITS[t].domain === 'sea') {
+      return seaSites
+        .slice()
+        .sort((a, b) => Number(b.zone === selected || b.factory === selected)
+          - Number(a.zone === selected || a.factory === selected))
+        .map(({ factory, zone }) => ({
+          key: `${factory}|${zone}`,
+          label: seaSites.length > 1 ? `place in ${tname(zone)} (via ${tname(factory)})` : `place in ${tname(zone)}`,
+          action: { kind: 'place', type: t, territory: factory, seaZone: zone },
+        }));
+    }
+    return sites
+      // one AA gun per territory (spec §9.2)
+      .filter((f) => t !== 'aaGun' || !view.territories[f].units.some((u) => u.type === 'aaGun'))
+      .slice()
+      .sort((a, b) => Number(b === selected) - Number(a === selected))
+      .map((f) => ({
+        key: f, label: `place in ${tname(f)}`,
+        action: { kind: 'place', type: t, territory: f },
+      }));
+  };
+
+  // A row with no buttons must always say WHY — an unexplained empty row is the
+  // dead end this panel used to have.
+  const whyNowhere = (t: UnitType): string => {
+    if (t === 'factory') {
+      return selected
+        ? `${tname(selected)} can't take a complex (you must have owned it since your turn began, and it can only hold one)`
+        : 'click the territory you want it in (any land you have owned since your turn began)';
+    }
+    if (sites.length === 0) return 'you have no complex able to build this turn';
+    if (t === 'aaGun') return 'each of your complexes already has an AA gun (one per territory)';
+    if (UNITS[t].domain === 'sea') return 'every sea zone next to your complexes is enemy-occupied';
+    return 'nowhere legal to put it';
+  };
+
   return (
     <div style={box}>
-      <b>Place new units</b> — {pending.length} to place. Click a territory with your factory
-      (or a sea zone next to one for ships), then place.
-      {[...counts.entries()].map(([t, n]) => (
-        <div key={t}>
-          {n}× {UNIT_NAME[t]}
-          {selected && !selectedIsWater && UNITS[t].domain !== 'sea' && (
-            <>
-              <button style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: selected })}>
-                place 1 in {tname(selected)}
-              </button>
-              {n > 1 && (
-                <button style={btn} disabled={busy}
-                  onClick={() => act(Array.from({ length: n }, () => ({ kind: 'place' as const, type: t, territory: selected })))}>
-                  place all {n} in {tname(selected)}
-                </button>
-              )}
-            </>
-          )}
-          {selected && !selectedIsWater && UNITS[t].domain === 'sea' &&
-            (TERR[selected]?.connections ?? []).filter((z) => TERR[z].water).map((z) => (
-              <button key={z} style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: selected, seaZone: z })}>
-                place in {tname(z)}
-              </button>
-            ))}
-          {selectedIsWater && UNITS[t].domain === 'sea' && (
-            factoriesForZone.length > 0 ? factoriesForZone.map((f) => (
-              <button key={f} style={btn} disabled={busy} onClick={() => act({ kind: 'place', type: t, territory: f, seaZone: selected! })}>
-                place in {tname(selected!)} (via {tname(f)} complex)
-              </button>
-            )) : (
-              <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 6 }}>
-                — no usable complex adjacent to {tname(selected!)} (owned since turn start required)
-              </span>
-            )
-          )}
+      <b>Place new units</b> — {pending.length} to place.
+      {sites.length === 0 && (
+        <div style={{ fontSize: 12, color: '#e8b04b', marginTop: 4 }}>
+          You have no complex able to build this turn — these units are forfeited when the phase ends.
         </div>
-      ))}
-      <div style={{ fontSize: 12, opacity: 0.7 }}>Ending the phase forfeits unplaced units (and collects income).</div>
+      )}
+      {[...counts.entries()].map(([t, n]) => {
+        const dests = targets(t);
+        return (
+          <div key={t} style={{ marginTop: 4 }}>
+            {n}× {UNIT_NAME[t]}
+            {dests.map((d) => (
+              <span key={d.key}>
+                <button style={btn} disabled={busy} onClick={() => act(d.action)}>{d.label}</button>
+                {n > 1 && (
+                  <button style={btn} disabled={busy}
+                    onClick={() => act(Array.from({ length: n }, () => d.action))}>
+                    all {n}
+                  </button>
+                )}
+              </span>
+            ))}
+            {dests.length === 0 && (
+              <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 6 }}>— {whyNowhere(t)}</span>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>Ending the phase forfeits unplaced units (and collects income).</div>
     </div>
   );
 }
