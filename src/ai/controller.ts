@@ -51,6 +51,11 @@ const standard: PlayerController<GameState, Action, Power> = {
  *    'standard@5'  2026-08-14, stops sinking its own carrier out from under its fighters
  *    'standard@6'  2026-08-18, breaks port blockades with land-based air, and land
  *                  powers stop funding ocean invasions instead of the war next door
+ *    'standard@7'  2026-09-20, picks WHICH ocean a new ship is born in — every
+ *                  friendly port of a complex is now on the menu (it used to see
+ *                  only the first), and a ship is scored from its sea zone rather
+ *                  than from the factory, so USA's west-coast yard builds into the
+ *                  Pacific instead of the Gulf of Mexico
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -59,4 +64,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@4': standard,
   'standard@5': standard,
   'standard@6': standard,
+  'standard@7': standard,
 };

@@ -1252,7 +1252,12 @@ function mobilize(state: GameState, p: Power): Action {
     .filter((u) => u.owner === p && UNITS[u.type].domain === 'land' && u.type !== 'factory').length;
   let best: { a: Action; score: number } | null = null;
   for (const a of places) {
-    let score = -distanceToEnemy(state, a.territory, p);
+    // Measure from where the unit actually APPEARS. For a ship that is the sea
+    // zone, not the complex: both ports of a two-port complex are the same
+    // distance from the complex, so this used to tie and fall through to
+    // iteration order — which is alphabetical, so USA's west-coast yard always
+    // chose the Gulf of Mexico over the Pacific it was building against.
+    let score = -distanceToEnemy(state, a.seaZone ?? a.territory, p);
     if (a.type === 'factory') {
       score += def(a.territory).ipc * 3;
       // ...and away from ground the enemy can overrun next turn. Without this the

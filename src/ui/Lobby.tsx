@@ -56,11 +56,12 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@6 as of 2026-08-18 — the AI now sends land-based aircraft to
-  // break a fleet blockading its own port, and a power with a land war on its
-  // border no longer buys transports for an ocean invasion it will never launch,
-  // so it earns a fresh rating instead of dragging the old one. (@5 was the
-  // carrier-casualty fix 2026-08-14, @4 complex siting 2026-08-12, @3 the
+  // Key is standard@7 as of 2026-09-20 — the AI now chooses which ocean it builds
+  // a ship into: a complex with two ports used to offer only the first, so the
+  // American west-coast yard always launched into the Gulf of Mexico, four sea
+  // zones and a canal away from the Pacific war it was building for. Fresh rating
+  // so the change does not drag the old one. (@6 was port-blockade air 2026-08-18,
+  // @5 the carrier-casualty fix 2026-08-14, @4 complex siting 2026-08-12, @3 the
   // sealift-feasibility gate and @2 the Allied garrison fix, both 2026-07-26.)
   const createVsAi = async (humanSide: Side) => {
     setCreating(true);
@@ -69,7 +70,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@6';
+      for (const p of aiPwrs) ai[p] = 'standard@7';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

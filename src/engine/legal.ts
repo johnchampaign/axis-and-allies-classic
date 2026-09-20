@@ -346,10 +346,19 @@ function mobilizeActions(state: GameState, actor: Power): Action[] {
         if ((state.placedThisTurn[t] ?? 0) >= cap) continue;
       }
       if (domain === 'sea') {
+        // EVERY friendly port of this complex, not just the first. Twelve
+        // complexes touch more than one sea zone — West US touches the Gulf and
+        // the Pacific, Karelia the Baltic and the Karelia Sea Zone — and this
+        // used to stop at the first one in (alphabetical) connection order, so
+        // the AI could never choose an ocean: USA's west-coast yard always built
+        // into the Gulf, four sea zones and a canal away from the Pacific it was
+        // building against. The placement scorer already grades sea zones; it
+        // just never had more than one candidate to grade. Same failure as the
+        // factory-site truncation fixed above, and placement is not
+        // combinatorial — at most a handful of extra actions per complex.
         for (const z of def(t).connections) {
           if (def(z).water && !isEnemyOccupied(state, z, actor)) {
             out.push({ kind: 'place', type, territory: t, seaZone: z });
-            break;
           }
         }
       } else if (type === 'aaGun') {
