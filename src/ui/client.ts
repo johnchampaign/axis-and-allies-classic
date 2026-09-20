@@ -4,6 +4,9 @@ import { withDeadline } from 'digital-boardgame-framework/client';
 import type { GameClientApi, MessagingClientApi } from 'digital-boardgame-framework/client';
 import type { Action, GameState } from '../engine/types';
 
+// Injected by the framework's versionStamp() vite plugin (see vite.config.ts).
+declare const __DBF_BUILD_ID__: string;
+
 // Every request is deadline-wrapped. The GameClientApi contract requires each
 // method to settle in bounded time: a fetch that HANGS (never resolves, never
 // rejects) is worse than one that fails, because useGame pauses background polling
@@ -85,6 +88,13 @@ export function makeClient(
         // reports" panel can find the replies to reports they filed.
         body: JSON.stringify({
           category: 'axis-allies',
+          // Stamp the bundle the reporter is actually running. Without it every
+          // report arrived with clientBuild: null, so triage could never tell a
+          // genuine bug from a stale cached bundle (iOS Safari caches for ever)
+          // — which is exactly what stalled the "couldn't place carriers in East
+          // US" report of 2026-09-19, whose stored state showed the placement
+          // had in fact succeeded.
+          clientBuild: typeof __DBF_BUILD_ID__ === 'string' ? __DBF_BUILD_ID__ : undefined,
           ...submission,
           message: `${submission.message}${reporterMark()}`,
         }),
