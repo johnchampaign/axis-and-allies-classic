@@ -151,6 +151,11 @@ export function makeServer(request: Request, env: Env, opts: { notify?: boolean 
     // self-healing across polls — and still reports ratings. AI identities are set
     // by createGame from the `ai` arg regardless of aiControllers, so leaderboard
     // attribution is unaffected.
+    // No `aiSlice` (dbf 0.55) either: it only splits the framework's driveAi, which
+    // never runs without aiControllers. advanceAI already slices by step count
+    // (adaptive 25..250 per request) — the right shape here, since AI seats
+    // interleave mid-turn (an AI defender picks casualties in an AI attacker's
+    // battle), where perSeat would split at every hand-off.
     codec: jsonCodec<GameState>(),
     store: new SupabaseStore(supabase),
     // Per-request servers don't email; the cron sweep (opts.notify) does, so a

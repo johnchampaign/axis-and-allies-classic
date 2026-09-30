@@ -48,7 +48,7 @@ no UI before the headless soak passes.
 ## Conventions
 
 - Never `git add -A`; stage by name. New commits, never `--amend`/force-push.
-- Framework via npm (`^0.53.0`), never `file:` links.
+- Framework via npm (`^0.55.0`), never `file:` links.
 - Game-specific code only here; framework gaps go to the framework repo's
   `framework-fit-notes.md`.
 - Deploy: Cloudflare Pages project `axis-and-allies-classic`
