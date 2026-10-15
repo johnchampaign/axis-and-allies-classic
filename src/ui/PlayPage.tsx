@@ -3,6 +3,7 @@ import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar } from 'digita
 import type { RankedInfo } from 'digital-boardgame-framework/client';
 import type { Action, GameState, LogEntry, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
+import { TERRITORIES } from '../engine/data';
 import { ActionPanel, tname } from './ActionPanel';
 import { AiTurnSummary } from './AiTurnSummary';
 import { ArtBoard } from './ArtBoard';
@@ -349,6 +350,16 @@ function UnitPicker({
   );
 }
 
+// Combined Germany + Japan production level, the figure the Axis economic
+// victory checks at the end of each round (engine turn.ts, spec §11.2).
+function axisIncome(view: GameState): number {
+  let sum = 0;
+  for (const [t, ts] of Object.entries(view.territories)) {
+    if (ts.owner === 'germany' || ts.owner === 'japan') sum += TERRITORIES[t]?.ipc ?? 0;
+  }
+  return sum;
+}
+
 function Header({
   view, you, wallet, token, setToken,
 }: {
@@ -367,6 +378,10 @@ function Header({
         </span>
       ))}
       <span>round {view.round + 1} · {view.phase}</span>
+      <span title="Axis win on economics if Germany + Japan's combined income is 84 or more at the end of a round"
+        style={{ padding: '4px 8px', borderRadius: 6, background: '#26323f', color: axisIncome(view) >= 84 ? '#f88' : undefined }}>
+        Axis income {axisIncome(view)}/84
+      </span>
       {Object.keys(wallet).length > 1 && (
         <select value={token} onChange={(e) => setToken(e.target.value)}>
           {Object.entries(wallet).map(([p, t]) => (
