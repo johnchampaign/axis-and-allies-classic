@@ -56,6 +56,11 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  only the first), and a ship is scored from its sea zone rather
  *                  than from the factory, so USA's west-coast yard builds into the
  *                  Pacific instead of the Gulf of Mexico
+ *    'standard@8'  2026-10-15, rallying to a threatened capital no longer strips
+ *                  the last defender off an income territory — Moscow used to
+ *                  swallow the whole Red Army while Siberia stood empty for the
+ *                  taking (econ wins 5/16 -> 2/16 on the strong-axis harness,
+ *                  and Moscow itself fell 12/16 -> 3/16)
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,

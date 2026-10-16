@@ -1129,8 +1129,39 @@ function noncombat(state: GameState, p: Power): Action | null {
         u.owner === p && !u.movedPhase && !u.fought &&
         (u.type === 'infantry' || u.type === 'armor'));
       if (movers.length === 0) continue;
+      // Same last-defender guard as the march in (3) below, and for the same
+      // reason — the rally was the bigger leak. `capitalThreatened` is a bare
+      // yes/no (any enemy ground within two land steps), which for Russia holds
+      // from round 2 to the end of the game, so this branch fired every single
+      // turn and swept the map clean into one pile. Live report pr1cd7zmh3wymr58:
+      // 24 infantry in Moscow while Japan took Evenki and Novosibirsk with one
+      // infantry apiece and held Soviet Far East with none — Axis economic
+      // victory on round 4. Free walkovers like that are what such a win is
+      // assembled from, so reinforcing the capital must not strip the income
+      // bare on the way. One infantry does not stop an assault; it turns a free
+      // grab into a fight the attacker has to be willing to take.
+      //
+      // strong-axis harness (the only matchup that reproduces this — see the
+      // scoreboard in scripts/strong-axis.ts): econ wins 5/16 -> 2/16, peak axis
+      // income 72.6 -> 65.8. Moscow fell LESS, 12/16 -> 3/16, because the forward
+      // defenders slow the advance instead of all queueing up behind it.
+      //
+      // DEAD END, do not redo (2026-10-15): gating this rally on a sufficiency
+      // test instead — rally only while the capital's defence is under 1.5x the
+      // attack power within two steps — looked like the obvious fix and was
+      // measurably worse. Releasing the pile does not garrison anything: the
+      // freed units march to the front under (3) and die there, so undefended
+      // income barely moved while Moscow started falling. Hold the income on the
+      // way past; do not just open the gate.
+      let marching = movers;
+      if (def(t).ipc > 0) {
+        const defenders = ts.units.filter((u) =>
+          u.owner === p && isCombat(u) && UNITS[u.type].domain === 'land');
+        if (defenders.length - movers.length < 1) marching = movers.slice(0, movers.length - 1);
+      }
+      if (marching.length === 0) continue;
       const step = stepToward(state, t, cap, p);
-      if (step) return { kind: 'move', unitIds: movers.map((u) => u.id), path: [t, step] };
+      if (step) return { kind: 'move', unitIds: marching.map((u) => u.id), path: [t, step] };
     }
     return null; // hold everything else
   }

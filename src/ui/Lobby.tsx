@@ -56,13 +56,15 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@7 as of 2026-09-20 — the AI now chooses which ocean it builds
-  // a ship into: a complex with two ports used to offer only the first, so the
-  // American west-coast yard always launched into the Gulf of Mexico, four sea
-  // zones and a canal away from the Pacific war it was building for. Fresh rating
-  // so the change does not drag the old one. (@6 was port-blockade air 2026-08-18,
-  // @5 the carrier-casualty fix 2026-08-14, @4 complex siting 2026-08-12, @3 the
-  // sealift-feasibility gate and @2 the Allied garrison fix, both 2026-07-26.)
+  // Key is standard@8 as of 2026-10-15 — a defensive power rallying home to a
+  // threatened capital no longer marches the LAST defender off an income
+  // territory on the way. Moscow used to end up holding the entire Red Army
+  // while the Siberian income sat empty for anyone who walked over, which is
+  // the raw material of an Axis economic victory. Fresh rating so the change
+  // does not drag the old one. (@7 was ocean choice 2026-09-20, @6
+  // port-blockade air 2026-08-18, @5 the carrier-casualty fix 2026-08-14, @4
+  // complex siting 2026-08-12, @3 the sealift-feasibility gate and @2 the
+  // Allied garrison fix, both 2026-07-26.)
   const createVsAi = async (humanSide: Side) => {
     setCreating(true);
     setError(null);
@@ -70,7 +72,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@7';
+      for (const p of aiPwrs) ai[p] = 'standard@8';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

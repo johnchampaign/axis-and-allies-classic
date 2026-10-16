@@ -27,8 +27,19 @@
 //   2026-07-26 noncombat garrison fix   2/16          5/16        69.3 (max 88)
 //  -- OPPONENT CHANGED HERE, rows above are not comparable to rows below --
 //   2026-07-26 sealift feasibility      4/16          7/16        73.3 (max 88)
+//  -- re-baselined 2026-10-15: standard@4..@7 shipped since the row above, so
+//     it was stale. Both rows below are fresh paired runs on the same build. --
+//   2026-10-15 re-baseline (standard@7) 5/16          6/16        72.6 (max 94)
+//   2026-10-15 rally last-defender grd  2/16          2/16        65.8 (max 87)
 //
-// That last row is NOT an Allied regression. This opponent delegates its
+// The 2026-10-15 rally-guard row is the fix for live report pr1cd7zmh3wymr58 ("Russia should have
+// defended Kaz, Eve, Nov and/or Cau massively"). Moscow also fell in 3/16 rather
+// than 12/16, and later (avg round 12.0 vs 9.2): holding the approaches beats
+// funnelling the whole army into one pile behind them. The 16-game tournament
+// moved allies 14 -> 13 with axis 1 -> 0 and round-caps 1 -> 3, i.e. the Allies
+// never lose more, they just take longer to close (avg rounds 21.3 -> 24.9).
+//
+// The 2026-07-26 sealift row is NOT an Allied regression. This opponent delegates its
 // PURCHASES to chooseAction, so the sealift-feasibility gate (heuristic.ts
 // purchase(): don't build an invasion fleet for a capital you cannot storm) made
 // the AXIS spend on units instead of unusable boats — it tuned the opponent, which
