@@ -360,6 +360,19 @@ function axisIncome(view: GameState): number {
   return sum;
 }
 
+// The same figure for the Allies. Only meaningful when the game was created with
+// the Allied economic-victory house rule (state.alliedEconWin); the standard
+// game gives the Allies no economic condition at all, so the counter is hidden.
+function alliedIncome(view: GameState): number {
+  let sum = 0;
+  for (const [t, ts] of Object.entries(view.territories)) {
+    if (ts.owner === 'russia' || ts.owner === 'uk' || ts.owner === 'usa') {
+      sum += TERRITORIES[t]?.ipc ?? 0;
+    }
+  }
+  return sum;
+}
+
 function Header({
   view, you, wallet, token, setToken,
 }: {
@@ -382,6 +395,12 @@ function Header({
         style={{ padding: '4px 8px', borderRadius: 6, background: '#26323f', color: axisIncome(view) >= 84 ? '#f88' : undefined }}>
         Axis income {axisIncome(view)}/84
       </span>
+      {view.alliedEconWin != null && (
+        <span title={`House rule: the Allies win on economics if Russia + UK + USA's combined income is ${view.alliedEconWin} or more at the end of a round`}
+          style={{ padding: '4px 8px', borderRadius: 6, background: '#26323f', color: alliedIncome(view) >= view.alliedEconWin ? '#8f8' : undefined }}>
+          Allied income {alliedIncome(view)}/{view.alliedEconWin}
+        </span>
+      )}
       {Object.keys(wallet).length > 1 && (
         <select value={token} onChange={(e) => setToken(e.target.value)}>
           {Object.entries(wallet).map(([p, t]) => (

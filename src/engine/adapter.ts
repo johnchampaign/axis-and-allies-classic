@@ -7,7 +7,7 @@ import { legalActions } from './legal';
 import { TURN_ORDER, SIDE_OF, type Action, type GameState, type Power } from './types';
 
 export const axisAndAlliesAdapter: GameAdapter<GameState, Action, Power> = {
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   migrate(raw: unknown, fromVersion: number): GameState {
     if (fromVersion === 1) {
@@ -17,7 +17,19 @@ export const axisAndAlliesAdapter: GameAdapter<GameState, Action, Power> = {
       const lines = Array.isArray(s.log)
         ? (s.log as unknown[]).filter((l): l is string => typeof l === 'string')
         : [];
-      return { ...s, schemaVersion: 2, log: upgradeProseLog<Power>(lines, s.globalTurn ?? 0) };
+      // fall through to the v2 → v3 step so a v1 snapshot lands on the current
+      // schema in one pass, rather than being handed back still a version short.
+      return {
+        ...s, schemaVersion: 3, alliedEconWin: null,
+        log: upgradeProseLog<Power>(lines, s.globalTurn ?? 0),
+      };
+    }
+    if (fromVersion === 2) {
+      // v2 → v3: the optional Allied economic victory line. Games created before
+      // it existed were played under the standard asymmetric conditions, so they
+      // migrate with the house rule OFF — turning it on mid-game could end a
+      // game in progress the moment it is loaded.
+      return { ...(raw as GameState), schemaVersion: 3, alliedEconWin: null };
     }
     throw new Error(`no migration from schema v${fromVersion}`);
   },

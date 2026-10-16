@@ -423,6 +423,22 @@ function endTurn(state: GameState, actor: Power): EngineResult {
       state.phase = 'gameOver';
       return ok;
     }
+    // Allied economic victory — HOUSE RULE, only when the game was created with
+    // it (state.alliedEconWin). Not a rulebook condition: §11.2 gives the Allies
+    // the two-capital win alone. Checked after the Axis line so that if both
+    // sides somehow cross in the same round the standard condition still wins.
+    const allyLine = state.alliedEconWin;
+    if (allyLine != null && !state.winner) {
+      const alliedNpl = productionLevel(state, 'russia')
+        + productionLevel(state, 'uk') + productionLevel(state, 'usa');
+      if (alliedNpl >= allyLine) {
+        state.winner = 'allies';
+        state.winReason =
+          `Allied economic victory (combined production ${alliedNpl} ≥ ${allyLine})`;
+        state.phase = 'gameOver';
+        return ok;
+      }
+    }
   }
   if (state.winner) { state.phase = 'gameOver'; return ok; }
   state.current = next;

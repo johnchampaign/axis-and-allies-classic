@@ -40,6 +40,13 @@ const ECON_WIN = 84;
 function enemyIncome(state: GameState, p: Power): number {
   return TURN_ORDER.filter((q) => isEnemy(q, p)).reduce((s, q) => s + productionLevel(state, q), 0);
 }
+/** The production at which p's ENEMY wins on economics, or null if they cannot.
+ *  Standard rules are asymmetric — only the Axis have an economic win — so an
+ *  Axis power has nothing to fear on production unless the game was created with
+ *  the Allied house rule (state.alliedEconWin, live report banrukm6f4fe129o). */
+function enemyEconWinLine(state: GameState, p: Power): number | null {
+  return SIDE_OF[p] === 'allies' ? ECON_WIN : state.alliedEconWin ?? null;
+}
 /** Strategic worth of taking `target`: the income it denies the enemy, plus a big
  *  bonus for liberating a friendly capital (restores that partner's whole economy
  *  and denies the enemy a captured production centre). */
@@ -731,7 +738,11 @@ function combatMove(state: GameState, p: Power): Action | null {
   // capital, and (when Axis is closing on the economic victory) accept worse odds
   // to contest it rather than racing easy low-value grabs.
   const ally = SIDE_OF[p] === 'allies';
-  const danger = ally && enemyIncome(state, p) >= ECON_WIN - 9;
+  // Income denial is no longer Allies-only: with the Allied economic-victory
+  // house rule on, the Axis have a production line to defend too, and the same
+  // nine-point warning band applies to whoever is being raced.
+  const econLine = enemyEconWinLine(state, p);
+  const danger = econLine != null && enemyIncome(state, p) >= econLine - 9;
   // Press a winning position: a faster win is a stronger player. When our side's
   // total combat power dominates the enemy's, stop waiting for cautious 1.4:1
   // odds — commit at near-even and close the game out instead of letting a won

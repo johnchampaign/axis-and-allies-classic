@@ -114,7 +114,7 @@ export interface Battle {
 export interface PurchaseItem { type: UnitType }
 
 export interface GameState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   rng: number;
   /** Increments every power-turn. */
   globalTurn: number;
@@ -143,6 +143,16 @@ export interface GameState {
   placedThisTurn: Record<string, number>;
   winner: Side | null;
   winReason: string | null;
+  /** HOUSE RULE, off by default (null). When set, the Allies also win on
+   *  economics once their combined production reaches this figure, checked at
+   *  the end of a full round exactly like the Axis line. This is NOT a rulebook
+   *  condition: spec §11.2 gives the Allies only the two-capital win, and the
+   *  official optional rules (§12) add no economic line for them. Requested in
+   *  live report banrukm6f4fe129o, whose real complaint was endgame length —
+   *  once an Axis capital falls the result is decided long before the Allies can
+   *  march on the second one. Offered for unranked games only, so standard and
+   *  rated play keep the asymmetric conditions the AI is tuned against. */
+  alliedEconWin?: number | null;
   log: LogEntry[];
   /** Powers played by the server AI (random legal moves). Set at game creation. */
   ai?: Power[];

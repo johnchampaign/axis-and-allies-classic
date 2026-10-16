@@ -11,6 +11,9 @@ export function Lobby() {
   const [aiPowers, setAiPowers] = useState<Power[]>([]);
   const [emails, setEmails] = useState<Partial<Record<Power, string>>>({});
   const [plays, setPlays] = useState<number | null>(null);
+  // House rule, off by default (live report banrukm6f4fe129o). Only offered on
+  // this path — the rated vs-AI ladder below keeps the standard conditions.
+  const [alliedEconWin, setAlliedEconWin] = useState<number | null>(null);
 
   // Best-effort games-played counter from the shared hub (framework v0.11).
   useEffect(() => {
@@ -34,7 +37,7 @@ export function Lobby() {
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aiPowers, emails: cleaned }),
+        body: JSON.stringify({ aiPowers, emails: cleaned, alliedEconWin }),
       });
       const data = (await r.json()) as { gameId: string; invites: Record<Power, string>; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
@@ -134,6 +137,28 @@ export function Lobby() {
                 {POWER_NAME[p]}
               </label>
             ))}
+          </fieldset>
+          <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
+            <legend>House rule: Allied economic victory (optional)</legend>
+            <p style={{ fontSize: 13, opacity: 0.8, margin: '4px 8px' }}>
+              In the standard game only the Axis can win on production (at 84).
+              The Allies must take both Berlin and Tokyo, which can be a long
+              grind once the result is already decided. Turn this on and the
+              Allies also win by reaching a combined production of their own.
+              They start at 90 of the 147 income on the board.
+            </p>
+            <label style={{ display: 'block', margin: '4px 10px' }}>
+              <span style={{ display: 'inline-block', minWidth: 130 }}>Allied win at</span>
+              <select
+                value={alliedEconWin ?? ''}
+                onChange={(e) => setAlliedEconWin(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Off — standard rules</option>
+                <option value="110">110 IPCs</option>
+                <option value="115">115 IPCs</option>
+                <option value="120">120 IPCs</option>
+              </select>
+            </label>
           </fieldset>
           <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
             <legend>Email reminders (optional)</legend>

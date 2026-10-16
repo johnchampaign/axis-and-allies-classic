@@ -17,7 +17,19 @@ interface CreateBody {
    *  powers become rated leaderboard opponents (`ai:axis-and-allies:<key>`); the
    *  GameServer drives them on create/submit. Preferred over aiPowers. */
   ai?: Partial<Record<Power, string>>;
+  /** HOUSE RULE (live report banrukm6f4fe129o): the Allies also win on economics
+   *  at this combined production. Omit or null for the standard game. Rejected
+   *  for rated vs-AI games — see the guard in the handler. */
+  alliedEconWin?: number | null;
 }
+
+// Bounds for the Allied economic-victory house rule. The Allies OPEN on 90 of
+// the 147 income on the board, so anything at or below that ends the game at the
+// end of round one from the starting position; 100 is the lowest figure that
+// still asks them to take something first. 147 is the whole board — past that the
+// rule could never fire.
+const ALLIED_ECON_MIN = 100;
+const ALLIED_ECON_MAX = 147;
 
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   try {
@@ -54,10 +66,25 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       return json({ error: 'at least one power must be human' }, 400);
     }
 
+    // The house rule changes the win conditions, so it must not touch the rated
+    // vs-AI ladder: every `ai:axis-and-allies:standard@N` rating, and all of the
+    // AI tuning behind it, assumes the standard asymmetric conditions.
+    let alliedEconWin: number | null = null;
+    if (body.alliedEconWin != null) {
+      if (fwAiPowers.length > 0) {
+        return json({ error: 'the Allied economic victory house rule is not available in rated games vs the AI' }, 400);
+      }
+      const v = body.alliedEconWin;
+      if (!Number.isInteger(v) || v < ALLIED_ECON_MIN || v > ALLIED_ECON_MAX) {
+        return json({ error: `alliedEconWin must be a whole number from ${ALLIED_ECON_MIN} to ${ALLIED_ECON_MAX}` }, 400);
+      }
+      alliedEconWin = v;
+    }
+
     const result = await server.createGame({
       // Only legacy AI powers go into state.ai (the advanceAI path reads it).
       // Framework-driven powers are marked via meta.identities by createGame.
-      initialState: createGame(seed, legacyAi),
+      initialState: createGame(seed, legacyAi, { alliedEconWin }),
       players: TURN_ORDER,
       emails: body.emails,
       ...(fwAiPowers.length ? { ai: fwAi } : {}),

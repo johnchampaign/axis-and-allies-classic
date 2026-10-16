@@ -381,6 +381,25 @@ playability or v1 scope. Revisit before calling the rules implementation done.
 11. **Strict neutrals**: land units entering a neutral capture it and stop
    (per spec §10); the engine also allows this via amphibious offload.
 
+## 12.6 Non-rulebook house rules (opt-in, off by default)
+
+Conditions the engine can apply that are NOT in the rulebook or in the official
+optional rules of §12. Each is chosen at game creation and defaults to OFF, so
+the standard game is unaffected; the AI is tuned against the standard conditions
+only.
+
+1. **Allied economic victory** (`GameState.alliedEconWin`, added 2026-10-16):
+   when set, the Allies also win at the end of a complete round once Russia +
+   UK + USA's combined National Production Level reaches that figure, mirroring
+   the Axis check in §11.2. Requested in live report banrukm6f4fe129o, whose
+   complaint was endgame length — §11.2 gives the Allies only the two-capital
+   win, so a decided game can still need a long march on the second capital.
+   Offered at 110/115/120; the API bounds it to 100–147. The Allies **open on
+   90** of the 147 income on the board, so a line at or below 90 would end the
+   game from the starting position. Not offered for rated games against the AI.
+   Note the two economic lines cannot both be crossed (84 + 110 > 147), so no
+   tie-break between them is needed at the bounds we allow.
+
 ## 13. Ambiguities and FAQ Rulings Affecting Engine Behavior
 
 1. **AA timing** (FAQ p. 1): AA guns fire **only during enemy combat movement** (overflight) and the AA step of battle/SBR; never on the defender's own turn, never as a normal combat unit. One shot per gun per enemy turn (§4.4). *3e*: confirms the timing window — "Your AA gun fires only during an enemy's combat movement phase," never during enemy non-combat movement (planes flying home are safe) (3e p. 5). Note: 3e demotes fire at merely-overflying planes to the "Always Active AA Guns" optional rule (3e p. 5, 9) — a deliberate 3e change; the 2e core rule (p. 13: overflight in combat movement triggers AA) remains binding. **Final ruling: as stated (2e/FAQ).**

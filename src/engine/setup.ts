@@ -3,7 +3,9 @@ import { ALL_TERRITORY_IDS, SETUP, TERRITORIES } from './data';
 import type { GameState, Power, TerritoryState, Unit } from './types';
 import { SIDE_OF, TURN_ORDER } from './types';
 
-export function createGame(seed: number, ai: Power[] = []): GameState {
+export function createGame(
+  seed: number, ai: Power[] = [], opts: { alliedEconWin?: number | null } = {},
+): GameState {
   const territories: Record<string, TerritoryState> = {};
   const neutrals: string[] = [];
   for (const id of ALL_TERRITORY_IDS) {
@@ -25,7 +27,7 @@ export function createGame(seed: number, ai: Power[] = []): GameState {
 
   const first: Power = TURN_ORDER[0];
   const state: GameState = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     rng: seed >>> 0,
     globalTurn: 0,
     round: 0,
@@ -46,6 +48,7 @@ export function createGame(seed: number, ai: Power[] = []): GameState {
     placedThisTurn: {},
     winner: null,
     winReason: null,
+    alliedEconWin: opts.alliedEconWin ?? null,
     log: [{ seq: 0, turn: 0, phase: 'tech', side: null, kind: 'game.start', msg: 'Game start.' }],
     ai,
   };
