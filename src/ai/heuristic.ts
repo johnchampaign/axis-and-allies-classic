@@ -12,7 +12,7 @@
 // action if the suggestion is rejected (never trust a heuristic blindly).
 import { CANALS, def, UNITS } from '../engine/data';
 import {
-  airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy, isEnemyOccupied,
+  airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy, isEnemyOccupied,
   isFriendlySpace, productionLevel, terr,
 } from '../engine/helpers';
 import { battleOpponents } from '../engine/combat';
@@ -812,9 +812,57 @@ function combatMove(state: GameState, p: Power): Action | null {
   return null;
 }
 
+/** Can an air unit at `from` with `budget` left still reach friendly LAND?
+ *  The land half of hasLandingSpot — a plane that can do this needs no deck. */
+function canReachFriendlyLand(state: GameState, from: string, budget: number): boolean {
+  if (budget < 0) return false;
+  const dist = airDistances(state, from, true);
+  for (const t of state.turnStartFriendly) {
+    if (def(t).water) continue;
+    const d = dist.get(t);
+    if (d !== undefined && d <= budget) return true;
+  }
+  return false;
+}
+
+/** Fighter seats our side will have in `zone` once the strike lands: two per
+ *  carrier, less the fighters already parked there. navalAttack sends the ships
+ *  first and flies the air in behind them, so a carrier still staging within
+ *  sailing range will be on station when the planes arrive — count it, or the
+ *  seat check would veto the very strike the carrier is sailing to support. */
+function deckSeatsAt(state: GameState, p: Power, zone: string): number {
+  const side = SIDE_OF[p];
+  const here = terr(state, zone).units;
+  let carriers = here.filter((u) => u.type === 'carrier' && SIDE_OF[u.owner] === side).length;
+  const near = new Set<string>([zone]);
+  for (const n1 of def(zone).connections) {
+    if (!def(n1).water) continue;
+    near.add(n1);
+    for (const n2 of def(n1).connections) if (def(n2).water) near.add(n2);
+  }
+  for (const z of near) {
+    if (z === zone) continue;
+    carriers += terr(state, z).units.filter((u) =>
+      u.owner === p && u.type === 'carrier' && !u.movedPhase && !u.fought).length;
+  }
+  const fighters = here.filter((u) => u.type === 'fighter' && SIDE_OF[u.owner] === side).length;
+  return carriers * 2 - fighters;
+}
+
 /** Own fighters/bombers that could join an attack on `target` and still get home. */
 function airSupport(state: GameState, p: Power, target: string): { unit: Unit; at: string }[] {
   const out: { unit: Unit; at: string }[] = [];
+  // A strike that ENDS AT SEA has a hard seat limit, and hasLandingSpot cannot
+  // see it: that helper answers one plane at a time and documents the gap
+  // itself — "Carrier-meet is approximated by carrier reach, ignoring future
+  // capacity races". So every fighter looks at the same deck and every one is
+  // told yes. Live report v6eu4xwnyw68q47g: Japan sent a carrier and FOUR
+  // fighters to the Hawaii sea zone, a deck seats two, and the log duly reads
+  // "japan fighter lost at sea (no carrier space)" — a plane lost with no shot
+  // fired at it. fightersStranded() already stops us choosing that carrier as a
+  // casualty; nothing stopped us overloading it in the first place.
+  const atSea = def(target).water;
+  let seats = atSea ? deckSeatsAt(state, p, target) : Number.POSITIVE_INFINITY;
   for (const [t, ts] of Object.entries(state.territories)) {
     for (const u of ts.units) {
       if (u.owner !== p || UNITS[u.type].domain !== 'air' || u.fought || u.movedPhase) continue;
@@ -822,7 +870,14 @@ function airSupport(state: GameState, p: Power, target: string): { unit: Unit; a
       const path = airPath(state, t, target, budget, false);
       if (!path) continue;
       const after = budget - (path.length - 1);
-      if (hasLandingSpot(state, u, target, after)) out.push({ unit: u, at: t });
+      if (!hasLandingSpot(state, u, target, after)) continue;
+      // A fighter that can still reach friendly land flies home under its own
+      // power; one that cannot is committing to a deck, and decks fill up.
+      if (atSea && u.type === 'fighter' && !canReachFriendlyLand(state, target, after)) {
+        if (seats <= 0) continue;
+        seats--;
+      }
+      out.push({ unit: u, at: t });
       if (out.length >= 4) return out; // enough support; keep some air home
     }
   }
@@ -877,13 +932,30 @@ function navalAttack(state: GameState, p: Power): Action | null {
         u.owner === p && !u.movedPhase && !u.fought && u.cargo.length === 0 &&
         (u.type === 'battleship' || u.type === 'submarine' || u.type === 'carrier'));
       if (ships.length === 0) continue;
+      // Never strip the last escort off our own transports to make up a strike.
+      // A transport defends at 1, so an unescorted one is a free kill for a
+      // single enemy plane — and for Japan the transports ARE the war effort.
+      // Live report v6eu4xwnyw68q47g: Japan sailed both battleships, the carrier
+      // and the sub to Hawaii on round 1, and on the reply one USA fighter sank
+      // BOTH transports sitting at home in the Japan sea zone. "Dont leave
+      // Transports unprotected as they are the only units Japan can go on the
+      // war shipping troops to mainland." The escort-duty rule in noncombat
+      // cannot repair this: it only moves warships that are still idle, and by
+      // then every one of them is away at the battle.
+      let sendable = ships;
+      if (terr(state, z).units.some((u) => u.owner === p && u.type === 'transport')) {
+        const escorts = terr(state, z).units.filter((u) =>
+          u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport').length;
+        if (escorts - ships.length < 1) sendable = ships.slice(0, ships.length - 1);
+      }
+      if (sendable.length === 0) continue;
       // reconstruct a legal path back toward the target
       const path = d === 1
         ? [z, zone]
         : [z, def(z).connections.find((m) => stage.get(m) === 1 && !isEnemyOccupied(state, m, p))!, zone];
       if (d === 2 && !path[1]) continue;
-      from.push({ path, ships });
-      reinforcements += ships.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
+      from.push({ path, ships: sendable });
+      reinforcements += sendable.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
     }
     const air = airSupport(state, p, zone);
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);

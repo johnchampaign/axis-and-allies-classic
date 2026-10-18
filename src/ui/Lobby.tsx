@@ -59,15 +59,16 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@8 as of 2026-10-15 — a defensive power rallying home to a
-  // threatened capital no longer marches the LAST defender off an income
-  // territory on the way. Moscow used to end up holding the entire Red Army
-  // while the Siberian income sat empty for anyone who walked over, which is
-  // the raw material of an Axis economic victory. Fresh rating so the change
-  // does not drag the old one. (@7 was ocean choice 2026-09-20, @6
-  // port-blockade air 2026-08-18, @5 the carrier-casualty fix 2026-08-14, @4
-  // complex siting 2026-08-12, @3 the sealift-feasibility gate and @2 the
-  // Allied garrison fix, both 2026-07-26.)
+  // Key is standard@9 as of 2026-10-18 — the AI stops throwing its own navy and
+  // air away. A naval strike can no longer sail off with the last warship
+  // guarding its own transports (boats defend at 1: one enemy plane used to
+  // sink them for free), and fighters now count carrier deck space before
+  // committing, instead of four flying out to a deck that seats two and the
+  // surplus drowning. Fresh rating so the change does not drag the old one.
+  // (@8 was the capital-rally garrison fix 2026-10-15, @7 ocean choice
+  // 2026-09-20, @6 port-blockade air 2026-08-18, @5 the carrier-casualty fix
+  // 2026-08-14, @4 complex siting 2026-08-12, @3 the sealift-feasibility gate
+  // and @2 the Allied garrison fix, both 2026-07-26.)
   const createVsAi = async (humanSide: Side) => {
     setCreating(true);
     setError(null);
@@ -75,7 +76,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@8';
+      for (const p of aiPwrs) ai[p] = 'standard@9';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

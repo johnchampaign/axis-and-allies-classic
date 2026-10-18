@@ -61,6 +61,11 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  swallow the whole Red Army while Siberia stood empty for the
  *                  taking (econ wins 5/16 -> 2/16 on the strong-axis harness,
  *                  and Moscow itself fell 12/16 -> 3/16)
+ *    'standard@9'  2026-10-18, stops throwing its own navy and air away: a
+ *                  strike can no longer take the last escort off its own
+ *                  transports, and fighters count carrier deck space before
+ *                  flying out to sea (four sent to a deck that seats two used
+ *                  to leave the surplus to drown)
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
