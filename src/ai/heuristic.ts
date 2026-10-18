@@ -576,6 +576,13 @@ function purchase(state: GameState, p: Power): Action {
   // power averaged ~0-1 warships while running boats — "Japan needs a fleet").
   // Keep roughly 1 warship per 3 transports afloat; battleships when rich (they
   // also shore-bombard), subs as the cheap screen otherwise.
+  //
+  // This ratio cannot be the answer to "my new boats were born unguarded"
+  // (report v6eu4xwnyw68q47g), and it is worth knowing why before anyone tries:
+  // purchase runs BEFORE movement, so at buy time the fleet is still sitting in
+  // its home port and the escort count looks fine. The warship that was supposed
+  // to cover the new boats is one the power already owns — it just sails away an
+  // hour later. Holding one of them back is navalAttack's job, not this one's.
   if (seaPlaceable) {
     const trn = myTransportCount(state, p);
     if (trn > 0) {
@@ -829,8 +836,14 @@ function canReachFriendlyLand(state: GameState, from: string, budget: number): b
  *  carrier, less the fighters already parked there. navalAttack sends the ships
  *  first and flies the air in behind them, so a carrier still staging within
  *  sailing range will be on station when the planes arrive — count it, or the
- *  seat check would veto the very strike the carrier is sailing to support. */
-function deckSeatsAt(state: GameState, p: Power, zone: string): number {
+ *  seat check would veto the very strike the carrier is sailing to support.
+ *  `grounded` is the hulls the strike has decided NOT to send (escorts reserved
+ *  over our own transports): they are unmoved and in range, so they look exactly
+ *  like a carrier sailing to support — and they are never coming. Counting them
+ *  reopens the drowned-fighter bug from the other side, and then the noncombat
+ *  carrier rescue sails the escort out to save the planes and the transports are
+ *  bare after all. */
+function deckSeatsAt(state: GameState, p: Power, zone: string, grounded: ReadonlySet<number>): number {
   const side = SIDE_OF[p];
   const here = terr(state, zone).units;
   let carriers = here.filter((u) => u.type === 'carrier' && SIDE_OF[u.owner] === side).length;
@@ -843,14 +856,17 @@ function deckSeatsAt(state: GameState, p: Power, zone: string): number {
   for (const z of near) {
     if (z === zone) continue;
     carriers += terr(state, z).units.filter((u) =>
-      u.owner === p && u.type === 'carrier' && !u.movedPhase && !u.fought).length;
+      u.owner === p && u.type === 'carrier' && !u.movedPhase && !u.fought &&
+      !grounded.has(u.id)).length;
   }
   const fighters = here.filter((u) => u.type === 'fighter' && SIDE_OF[u.owner] === side).length;
   return carriers * 2 - fighters;
 }
 
 /** Own fighters/bombers that could join an attack on `target` and still get home. */
-function airSupport(state: GameState, p: Power, target: string): { unit: Unit; at: string }[] {
+const NO_HULLS: ReadonlySet<number> = new Set();
+function airSupport(state: GameState, p: Power, target: string,
+                    grounded: ReadonlySet<number> = NO_HULLS): { unit: Unit; at: string }[] {
   const out: { unit: Unit; at: string }[] = [];
   // A strike that ENDS AT SEA has a hard seat limit, and hasLandingSpot cannot
   // see it: that helper answers one plane at a time and documents the gap
@@ -862,7 +878,7 @@ function airSupport(state: GameState, p: Power, target: string): { unit: Unit; a
   // fired at it. fightersStranded() already stops us choosing that carrier as a
   // casualty; nothing stopped us overloading it in the first place.
   const atSea = def(target).water;
-  let seats = atSea ? deckSeatsAt(state, p, target) : Number.POSITIVE_INFINITY;
+  let seats = atSea ? deckSeatsAt(state, p, target, grounded) : Number.POSITIVE_INFINITY;
   for (const [t, ts] of Object.entries(state.territories)) {
     for (const u of ts.units) {
       if (u.owner !== p || UNITS[u.type].domain !== 'air' || u.fought || u.movedPhase) continue;
@@ -891,6 +907,9 @@ function airSupport(state: GameState, p: Power, target: string): { unit: Unit; a
  * and no aircraft, so massing was impossible). */
 function navalAttack(state: GameState, p: Power): Action | null {
   const prof = PROFILES[p];
+  // Where this turn's bought transports will be born, if any. They are not on
+  // the board yet, so the escort guard below has to be told about them.
+  const berth = newBoatPort(state, p);
   for (const [zone, ts] of Object.entries(state.territories)) {
     if (!def(zone).water) continue;
     const enemies = ts.units.filter((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain !== 'land');
@@ -925,6 +944,9 @@ function navalAttack(state: GameState, p: Power): Action | null {
       }
     }
     const from: { path: string[]; ships: Unit[] }[] = [];
+    // Hulls this strike is leaving at home on escort duty. The seat count below
+    // must not promise the air a deck that is staying in port.
+    const grounded = new Set<number>();
     let reinforcements = 0;
     for (const [z, d] of stage) {
       if (d === 0) continue;
@@ -942,12 +964,32 @@ function navalAttack(state: GameState, p: Power): Action | null {
       // war shipping troops to mainland." The escort-duty rule in noncombat
       // cannot repair this: it only moves warships that are still idle, and by
       // then every one of them is away at the battle.
+      //
+      // The same goes for transports BOUGHT this turn, which is the other half
+      // of that report: Japan's fleet was still at home when the strike was
+      // assembled, so the guard above saw an empty-looking zone, sailed every
+      // warship to Hawaii, and mobilize then placed the two new transports into
+      // a bare Japan sea zone for the same single fighter to sink. Placement
+      // happens after noncombat, so a reserve made HERE is the last chance:
+      // nothing later in the turn can put an escort over them.
       let sendable = ships;
-      if (terr(state, z).units.some((u) => u.owner === p && u.type === 'transport')) {
+      const willHoldBoats = z === berth ||
+        terr(state, z).units.some((u) => u.owner === p && u.type === 'transport');
+      if (willHoldBoats) {
         const escorts = terr(state, z).units.filter((u) =>
           u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport').length;
-        if (escorts - ships.length < 1) sendable = ships.slice(0, ships.length - 1);
+        if (escorts - ships.length < 1) {
+          // WHICH ship stays matters twice over. A battleship is the best
+          // screen on the board (defends at 4), and a carrier is the worst one
+          // to hold back, because the fighters already committed to the strike
+          // are counting on its deck to land on — reserving the carrier first
+          // merely swaps drowned transports for drowned aircraft.
+          const keeper = { battleship: 3, submarine: 2, carrier: 1 } as Record<string, number>;
+          const order = [...ships].sort((a, b) => (keeper[a.type] ?? 0) - (keeper[b.type] ?? 0));
+          sendable = order.slice(0, order.length - 1);
+        }
       }
+      for (const u of ships) if (!sendable.includes(u)) grounded.add(u.id);
       if (sendable.length === 0) continue;
       // reconstruct a legal path back toward the target
       const path = d === 1
@@ -957,7 +999,7 @@ function navalAttack(state: GameState, p: Power): Action | null {
       from.push({ path, ships: sendable });
       reinforcements += sendable.reduce((s, u) => s + Math.max(atkVal(u), 0.5), 0);
     }
-    const air = airSupport(state, p, zone);
+    const air = airSupport(state, p, zone, grounded);
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
     if (from.length === 0 && air.length === 0) continue; // nothing left to send
     if ((committed + reinforcements + airStrength) / defense >= prof.margin) {
@@ -1181,6 +1223,7 @@ function noncombat(state: GameState, p: Power): Action | null {
   // to the nearest zone holding UNESCORTED own transports — a screen only works
   // if it sits WITH the boats (live reports: single transports left as free kills
   // for enemy air; "Japan needs a fleet"). One warship per call; stateless.
+  const berth = newBoatPort(state, p);
   for (const [wz, wts] of Object.entries(state.territories)) {
     if (!def(wz).water) continue;
     const warship = wts.units.find((u) =>
@@ -1188,6 +1231,11 @@ function noncombat(state: GameState, p: Power): Action | null {
       !u.movedPhase && !u.fought);
     if (!warship) continue;
     if (wts.units.some((u) => u.owner === p && u.type === 'transport')) continue; // already escorting
+    // A warship held back for transports being built this turn is escorting
+    // too, even though the zone looks empty — it is waiting for them. Without
+    // this the reserve kept in combat movement would promptly sail off to cover
+    // some other lone boat and the new ones would still be born bare.
+    if (wz === berth) continue;
     const parents = seaParents(state, wz, p);
     let best: string[] | null = null;
     for (const [tz, tts] of Object.entries(state.territories)) {
@@ -1348,6 +1396,64 @@ function stepTowardEnemy(state: GameState, from: string, p: Power): string | nul
 }
 
 // --- mobilize ---
+/** Every sea zone a power could place a freshly bought ship into: the water
+ *  neighbours of the complexes it held at turn start. Mirrors mobilizeActions()
+ *  in legal.ts — the whole point is that the two agree. */
+function shipPorts(state: GameState, p: Power): string[] {
+  const out: string[] = [];
+  for (const t of state.turnStartFactories) {
+    const ts = terr(state, t);
+    if (ts.owner !== p || !ts.units.some((u) => u.type === 'factory' && u.owner === p)) continue;
+    for (const z of def(t).connections) {
+      if (def(z).water && !isEnemyOccupied(state, z, p) && !out.includes(z)) out.push(z);
+    }
+  }
+  return out;
+}
+
+/** How good a sea zone is as the birthplace of a ship. Shared by mobilize()
+ *  (which chooses) and newBoatPort() (which has to predict that choice a phase
+ *  earlier, while there is still a warship left to reserve). */
+function shipPortScore(state: GameState, zone: string, p: Power, type: UnitType): number {
+  let score = -distanceToEnemy(state, zone, p);
+  const openWater = def(zone).connections.some((n) => def(n).water);
+  if (!openWater) score -= 100; // a lake: last resort only
+  if (type === 'transport') {
+    const escorted = terr(state, zone).units.some((u) =>
+      u.owner === p && u.type !== 'transport' && UNITS[u.type].domain === 'sea');
+    // Don't drop an UNESCORTED transport next to enemy air / warships that will
+    // sink it for free next turn (live report: UK/Russia parked transports in
+    // the East Mediterranean where Axis fighters picked them off every round).
+    const threatened = def(zone).connections.some((n) =>
+      terr(state, n).units.some((u) => isEnemy(u.owner, p) && isCombat(u) &&
+        (UNITS[u.type].domain === 'air' || UNITS[u.type].domain === 'sea')));
+    if (threatened && !escorted) score -= 60;
+    // DELIBERATELY NOT WIDENED (2026-10-18): penalising an unescorted port even
+    // when no enemy is next door looked like the tidy fix for the new-build half
+    // of report v6eu4xwnyw68q47g, and it is the wrong lever. Japan — the power in
+    // the report — has exactly ONE port, so no amount of site scoring can place
+    // its boats anywhere safer; and any penalty big enough to steer a two-port
+    // complex is big enough to send USA's west-coast yard back to the Gulf of
+    // Mexico, which is precisely the measured gain of standard@7. The reserve in
+    // navalAttack is what actually protects new boats; this stays a tie-break.
+  }
+  return score;
+}
+
+/** The zone a transport bought this turn will most likely be born in, or null
+ *  if none are on order. Known during combat movement — `state.purchases` is
+ *  filled in the purchase phase, which comes first — which is the last moment a
+ *  warship can still be held back to meet the boats. */
+function newBoatPort(state: GameState, p: Power): string | null {
+  if (!state.purchases.some((i) => i.type === 'transport')) return null;
+  let best: { z: string; score: number } | null = null;
+  for (const z of shipPorts(state, p)) {
+    const score = shipPortScore(state, z, p, 'transport');
+    if (!best || score > best.score) best = { z, score };
+  }
+  return best?.z ?? null;
+}
+
 function mobilize(state: GameState, p: Power): Action {
   const legal = legalActions(state, p);
   let places = legal.filter((a): a is Extract<Action, { kind: 'place' }> => a.kind === 'place');
@@ -1371,7 +1477,9 @@ function mobilize(state: GameState, p: Power): Action {
     // distance from the complex, so this used to tie and fall through to
     // iteration order — which is alphabetical, so USA's west-coast yard always
     // chose the Gulf of Mexico over the Pacific it was building against.
-    let score = -distanceToEnemy(state, a.seaZone ?? a.territory, p);
+    let score = a.seaZone
+      ? shipPortScore(state, a.seaZone, p, a.type)
+      : -distanceToEnemy(state, a.territory, p);
     if (a.type === 'factory') {
       score += def(a.territory).ipc * 3;
       // ...and away from ground the enemy can overrun next turn. Without this the
@@ -1383,21 +1491,6 @@ function mobilize(state: GameState, p: Power): Action {
       // whose every unit then needs a boat (the reported alternative to Egypt was
       // South Africa, which marches north through Africa).
       if (distanceToEnemyByLand(state, a.territory, p) < 99) score += 2;
-    }
-    if (a.seaZone) {
-      const openWater = def(a.seaZone).connections.some((n) => def(n).water);
-      if (!openWater) score -= 100; // a lake: last resort only
-      // Don't drop an UNESCORTED transport next to enemy air / warships that will
-      // sink it for free next turn (live report: UK/Russia parked transports in
-      // the East Mediterranean where Axis fighters picked them off every round).
-      if (a.type === 'transport') {
-        const escorted = terr(state, a.seaZone).units.some((u) =>
-          u.owner === p && u.type !== 'transport' && UNITS[u.type].domain === 'sea');
-        const threatened = def(a.seaZone).connections.some((n) =>
-          terr(state, n).units.some((u) => isEnemy(u.owner, p) && isCombat(u) &&
-            (UNITS[u.type].domain === 'air' || UNITS[u.type].domain === 'sea')));
-        if (threatened && !escorted) score -= 60;
-      }
     }
     // don't keep stuffing an overflowing capital (log: 161 units in Moscow)
     if (a.territory === CAPITAL_OF[p] && !a.seaZone && capPile > 35) score -= 50;

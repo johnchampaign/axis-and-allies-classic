@@ -66,6 +66,14 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  transports, and fighters count carrier deck space before
  *                  flying out to sea (four sent to a deck that seats two used
  *                  to leave the surplus to drown)
+ *    'standard@10' 2026-10-18, transports BOUGHT after the fleet has sailed are
+ *                  no longer born unguarded: a strike now reserves one warship
+ *                  (a battleship by preference, never the carrier the strike's
+ *                  own fighters need) in the port where this turn's new boats
+ *                  will be placed, and noncombat leaves that reserve alone.
+ *                  Also closes the hole that reserve opened in @9's deck-space
+ *                  check: a carrier kept home on escort duty no longer counts
+ *                  as two seats for a strike it is not sailing on
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -75,4 +83,7 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@5': standard,
   'standard@6': standard,
   'standard@7': standard,
+  'standard@8': standard,
+  'standard@9': standard,
+  'standard@10': standard,
 };
