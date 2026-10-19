@@ -989,6 +989,41 @@ function navalAttack(state: GameState, p: Power): Action | null {
           sendable = order.slice(0, order.length - 1);
         }
       }
+      // MEASURED COST OF THIS GUARD, so nobody re-opens the question from the
+      // 16-game row alone. 4490e6f recorded that Moscow went from "held 16/16"
+      // to "held 14/16" and could not say which of its two fixes did it. The
+      // attribution run (128 games/arm, seeds 9000+17i, each fix reverted in
+      // turn, worktree pinned at 4490e6f):
+      //
+      //   arm                      allies  Moscow falls   rate
+      //   neither  (= standard@8)    107        4         3.1%
+      //   escort guard only          115        9         7.0%
+      //   deck seats only            101        6         4.7%
+      //   both     (= standard@9)    107       11         8.6%
+      //
+      // So THIS guard is the larger half: +3.9pp of the +5.5pp, with the deck
+      // seats adding +1.6pp and the two exactly additive (no interaction).
+      // Read the honest version, though: Fisher two-sided against @8 is
+      // p = 0.254 for this arm alone and p = 0.108 for the pair, and the 95%
+      // CI on the combined difference [-0.2pp, +11.2pp] still grazes zero. It
+      // is a real-looking trend, not an established effect; ~176 games/arm
+      // would settle it.
+      //
+      // KEPT anyway, deliberately: allied wins are IDENTICAL either way
+      // (107/128 at @8 and at @9) and the axis difference is nothing
+      // (4 vs 2, p = 0.68). Russia loses its capital somewhat more often and
+      // the Allies win exactly as much, mostly because Japan now keeps a
+      // screen at home and actually runs the sealift its transports exist for
+      // — which is the whole point of the guard. Reverting it to chase an
+      // unestablished metric would reintroduce the bug in report
+      // v6eu4xwnyw68q47g (both Japanese transports sunk by one fighter).
+      //
+      // DEAD END, do not retry: the 16-game tournament cannot answer this at
+      // all. Moscow falls 0/1/1/2 across the same four arms at n=16 (p = 0.48
+      // at best), and @8's famous "16/16" is luck — its true rate is ~3%. Nor
+      // can you trace it per-seed: a seed fixes the opening position only, and
+      // rollDice advances one shared cursor, so one different decision
+      // reshuffles every later roll. Same seed, different game.
       for (const u of ships) if (!sendable.includes(u)) grounded.add(u.id);
       if (sendable.length === 0) continue;
       // reconstruct a legal path back toward the target

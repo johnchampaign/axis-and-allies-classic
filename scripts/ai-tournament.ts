@@ -2,6 +2,33 @@
 // Reports side balance, game length, how Moscow fares, and end-state size
 // (an engine-health proxy after the runaway-state incident).
 // Run: vite-node scripts/ai-tournament.ts [games] [maxRounds]
+//
+// WHAT THE DEFAULT RUN CAN AND CANNOT TELL YOU — read before quoting a number.
+//
+// A seed fixes the OPENING POSITION ONLY, not the game. Engine dice come from
+// one cursor in state (rollDice in helpers.ts advances state.rng per roll), so
+// the first decision that differs consumes a different number of rolls and
+// every later roll in that game diverges. Two builds on the same seed play the
+// same opening and then different games. Measured: across four arms differing
+// by a few lines, seed 9000 ended r27 / r24 / r22 / r12, and seed 9204 was an
+// Allied win at r15 under one arm and an Axis win at r18 under another.
+// So "the same seed lost Moscow under X, look at it under Y" proves nothing,
+// and a small split difference is not evidence of a behaviour change.
+//
+// At 16 games this harness is a SMOKE TEST: it catches a stall, a crash, a
+// side that stops winning, a collapse in game length. It cannot resolve a rare
+// outcome. Moscow falls at roughly 3-9% per game, so 16 games sees 0-2 of them
+// and the difference between builds is unreadable (0/1/1/2 across four arms,
+// Fisher p = 0.48 at best). The famous "standard@8 holds Moscow 16/16" row is
+// luck: the same build at 128 games holds it 124/128, i.e. ~3%, and takes 2
+// axis wins where 16 games showed none.
+//
+// Rules of thumb: ~48 games/arm is the FLOOR to see a 12.5%-vs-0% difference;
+// ~176/arm to resolve the 8.6%-vs-3.1% Moscow difference that standard@9
+// actually showed. Quote a Moscow or axis-win delta only with a game count and
+// a p-value, or use a harness aimed at the specific behaviour instead
+// (scripts/strong-axis.ts for Allied econ-denial; a unit test when the change
+// is a logical invariant rather than a tendency).
 import { Rng } from 'digital-boardgame-framework';
 import { chooseAction } from '../src/ai/heuristic';
 import { axisAndAlliesAdapter as adapter } from '../src/engine/adapter';
