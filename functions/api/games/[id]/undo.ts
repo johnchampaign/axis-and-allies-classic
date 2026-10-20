@@ -20,13 +20,30 @@ const decode = (s: string): GameState => JSON.parse(s.replace(/^v\d+:/, '')) as 
 
 // Undo only walks back within the current turn (to the last dice roll), so a
 // bounded window of recent snapshots is always enough — never pull full history.
-const WINDOW = 60;
+// The target is usually the row right before the latest (a few rows back after
+// consecutive undos, since each undo re-appends a row), so read the window in
+// widening tiers: each row is a ~190 KB state, and pulling 60 of them per peek
+// was the route's whole CPU cost (Cloudflare's per-request limit).
+const TIERS = [2, 8, 60];
 
-type UndoTarget = { latestTurn: number; targetState: string };
+type Row = { turn: number; state: string };
+/** The `limit` most recent snapshot rows (any order). */
+type LoadRecent = (limit: number) => Promise<Row[]>;
+type UndoTarget = { latestTurn: number; targetState: string; hist: Row[]; index: number };
 
-/** Find the snapshot to revert to, or null if undo is not currently allowed. */
-async function findUndo(env: Env, id: string, you: string): Promise<UndoTarget | null> {
-  const hist = (await recentSnapshots(env, id, WINDOW)).sort((a, b) => a.turn - b.turn);
+/** The seat this token holds — the same check the framework's authenticate
+ *  makes, without fetching and decoding the game's view. */
+async function seatOf(env: Env, id: string, token: string): Promise<string> {
+  const meta = await makeStore(env).getGameMeta(id);
+  if (!meta) throw new Error('Game not found');
+  const entry = Object.entries(meta.tokens).find(([, t]) => t === token);
+  if (!entry) throw new Error('Invalid token');
+  return entry[0];
+}
+
+/** Find the snapshot to revert to within `hist` (ascending by turn), or null.
+ *  `widen` is set when the target may lie beyond the rows given. */
+export function findIn(hist: Row[], you: string): UndoTarget | null | 'widen' {
   if (hist.length < 2) return null;
   const latest = hist[hist.length - 1];
   const cur = decode(latest.state);
@@ -37,19 +54,37 @@ async function findUndo(env: Env, id: string, you: string): Promise<UndoTarget |
     if ((st.seq ?? 0) !== wantSeq) continue;
     if (st.rng !== cur.rng) return null;                 // dice rolled since → no undo
     if (adapter.currentActor(st) !== you) return null;   // would cross into another seat
-    return { latestTurn: latest.turn, targetState: hist[i].state };
+    return { latestTurn: latest.turn, targetState: hist[i].state, hist, index: i };
+  }
+  return 'widen';
+}
+
+/** Find the snapshot to revert to, or null if undo is not currently allowed. */
+export async function findUndo(load: LoadRecent, you: string): Promise<UndoTarget | null> {
+  for (const limit of TIERS) {
+    const hist = (await load(limit)).sort((a, b) => a.turn - b.turn);
+    const r = findIn(hist, you);
+    if (r !== 'widen') return r;
+    if (hist.length < limit) return null; // already the whole history
   }
   return null;
+}
+
+/** After reverting to `undo`, can the seat keep undoing? Usually answered from
+ *  the rows already loaded (the new latest is the target, at `index`); when
+ *  they don't reach far enough back, look again. */
+export async function canUndoAfter(load: LoadRecent, undo: UndoTarget, you: string): Promise<boolean> {
+  const r = findIn(undo.hist.slice(0, undo.index + 1), you);
+  if (r !== 'widen' && undo.index > 0) return r !== null;
+  return (await findUndo(load, you)) !== null;
 }
 
 export const onRequestGet: PagesFunction<Env> = async (ctx) => {
   try {
     const { request, env, params } = ctx;
     const id = String(params.id);
-    const server = makeServer(request, env);
-    const token = tokenOf(request);
-    const { you } = await server.fetch(id, token); // authenticates the token → seat
-    const undo = await findUndo(env, id, you);
+    const you = await seatOf(env, id, tokenOf(request));
+    const undo = await findUndo((n) => recentSnapshots(env, id, n), you);
     return json({ canUndo: undo !== null });
   } catch (e) {
     return fail(e);
@@ -63,14 +98,14 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     const server = makeServer(request, env);
     const store = makeStore(env);
     const token = tokenOf(request);
-    const { you } = await server.fetch(id, token);
-    const undo = await findUndo(env, id, you);
+    const you = await seatOf(env, id, token);
+    const load: LoadRecent = (n) => recentSnapshots(env, id, n);
+    const undo = await findUndo(load, you);
     if (!undo) return json({ error: 'nothing to undo' }, 400);
     // re-append the prior state as the new latest snapshot (store is append-only)
     await store.putSnapshot(id, { turn: undo.latestTurn + 1, state: undo.targetState });
     const view = await server.fetch(id, token);
-    const next = await findUndo(env, id, you); // can we keep undoing?
-    return json({ ...view, canUndo: next !== null });
+    return json({ ...view, canUndo: await canUndoAfter(load, undo, you) });
   } catch (e) {
     return fail(e);
   }

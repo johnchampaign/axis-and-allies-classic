@@ -12,7 +12,11 @@ import type { Action, EngineResult, GameState, Power } from './types';
 export function applyActionWithResult(
   prev: GameState, action: Action, actor: Power,
 ): { state: GameState; result: EngineResult } {
-  const state = structuredClone(prev);
+  // Log entries are append-only (never edited after appendGameLog), so share
+  // them and copy only the array: the 500-entry log is ~60% of the state, and
+  // deep-cloning it on every action was most of the server's per-request CPU.
+  const { log, ...rest } = prev;
+  const state: GameState = { ...structuredClone(rest), log: [...log] };
   if (state.phase === 'gameOver') return { state: prev, result: { ok: false, reason: 'game over' } };
 
   // battle decisions may belong to the defender; everything else is the current power's

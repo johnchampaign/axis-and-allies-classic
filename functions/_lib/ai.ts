@@ -15,8 +15,12 @@ const codec = jsonCodec<GameState>();
 const PREFIX = /^v\d+:/;
 // Per-request slice: each step is a full engine apply (state clone + legality
 // work), and Pages Functions have a tight CPU budget — 3000 steps blew it
-// (Cloudflare 1102) on all-AI games. Polling clients resume the remainder.
-const MAX_STEPS = 250;
+// (Cloudflare 1102) on all-AI games, and so did the old adaptive 25–250 (a
+// late-game slice measured ~300 ms CPU locally; a killed slice saves nothing,
+// so every poll re-ran it and was killed again). A small fixed slice is a few
+// ms; the response says `aiPending` and the client refetches ~150 ms later to
+// carry the AI on.
+const MAX_STEPS = 6;
 
 function decodeSnapshot(raw: string): GameState {
   return codec.decode(raw.replace(PREFIX, ''));
@@ -25,11 +29,16 @@ function encodeSnapshot(state: GameState): string {
   return `v${adapter.schemaVersion ?? 1}:${codec.encode(state)}`;
 }
 
-/** Play all pending AI decisions (turns AND battle responses, e.g. casualty
- *  picks when a human attacks an AI power). Returns true if anything moved. */
-export async function advanceAI(store: SnapshotStore, env: Env, gameId: string): Promise<boolean> {
+/** Play pending AI decisions (turns AND battle responses, e.g. casualty picks
+ *  when a human attacks an AI power), at most MAX_STEPS per call. `moved`: the
+ *  AI acted; `pending`: it stopped at the cap with an AI still to act — the
+ *  caller returns `aiPending` so the client fetches again to continue. */
+export async function advanceAI(
+  store: SnapshotStore, env: Env, gameId: string,
+): Promise<{ moved: boolean; pending: boolean }> {
+  const none = { moved: false, pending: false };
   const latest = await store.getLatest(gameId);
-  if (!latest) return false;
+  if (!latest) return none;
   let state = decodeSnapshot(latest.state);
 
   // AI seats = legacy in-memory powers (state.ai) UNION framework server-driven
@@ -43,17 +52,14 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
     .filter(([, id]) => typeof id === 'string' && id.startsWith('ai:'))
     .map(([seat]) => seat as Power);
   const ai = [...new Set<Power>([...(state.ai ?? []), ...fwAiSeats])];
-  if (ai.length === 0) return false;
-
-  // adaptive slice: every step clones the whole state, so big late-game states
-  // get smaller slices to stay inside the Pages CPU budget
-  const unitCount = Object.values(state.territories).reduce((s, t) => s + t.units.length, 0);
-  const maxSteps = Math.max(25, Math.min(MAX_STEPS, Math.floor(40000 / Math.max(1, unitCount))));
+  if (ai.length === 0) return none;
 
   let steps = 0;
-  while (steps < maxSteps) {
+  let pending = false;
+  for (;;) {
     const actor = adapter.currentActor(state);
     if (!actor || !ai.includes(actor)) break;
+    if (steps >= MAX_STEPS) { pending = true; break; }
     // heuristic first; fall back to a random legal action if it has no idea or
     // its suggestion is rejected (never let the AI wedge a live game).
     // Math.random only picks WHICH action; the engine dice stay seeded in-state.
@@ -104,7 +110,7 @@ export async function advanceAI(store: SnapshotStore, env: Env, gameId: string):
       await store.putGameMeta({ ...meta, resolved: true, ...(ranked ? { rankedReport: ranked } : {}) });
     } catch { /* best-effort — an unresolved meta just retries on the next fetch */ }
   }
-  return steps > 0;
+  return { moved: steps > 0, pending };
 }
 
 /** Mirror of GameServer's private maybeReportRatings for the advanceAI path
