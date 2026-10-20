@@ -234,7 +234,10 @@ function GameOverDialog({
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
-      <div style={{ background: '#26323f', borderRadius: 10, padding: 22, maxWidth: 440, color: '#e8e4d8', textAlign: 'center' }}>
+      <div style={{
+        background: '#26323f', borderRadius: 10, padding: 22, maxWidth: 440, color: '#e8e4d8',
+        textAlign: 'center', maxHeight: '85vh', overflowY: 'auto',
+      }}>
         <h2 style={{ marginTop: 0 }}>{youWon ? '🎉 Victory!' : 'Defeat'}</h2>
         <p>
           The <b>{view.winner === 'axis' ? 'Axis' : 'Allies'}</b> win — {view.winReason}.
@@ -519,11 +522,11 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
           )}
           {(reports ?? []).map((r) => (
             <div key={r.reportId} style={{ borderTop: '1px solid #34465a', padding: '8px 0' }}>
-              <div style={{ fontSize: 13 }}>{stripReporterMarker(r.message)}</div>
+              <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{stripReporterMarker(r.message)}</div>
               {r.resolution ? (
                 <div style={{ marginTop: 6, background: '#1d2a36', borderLeft: '3px solid #5a8', borderRadius: 4, padding: '6px 8px' }}>
                   <div style={{ fontSize: 11, color: '#7c9', marginBottom: 2 }}>Reply from the team</div>
-                  <div style={{ fontSize: 13 }}>{r.resolution.note}</div>
+                  <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{r.resolution.note}</div>
                 </div>
               ) : (
                 <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>⏳ Pending — we haven’t replied yet.</div>
@@ -538,15 +541,37 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 70,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ background: '#26323f', borderRadius: 10, padding: 22, maxWidth: 460, color: '#e8e4d8' }}>
-            <h3 style={{ marginTop: 0 }}>We replied to your report 📨</h3>
-            <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8 }}>
-              You reported: “{stripReporterMarker(reply.message)}”
+          {/* Live report iu1jc8rp9e1uuwui: "With your last two, very long answers
+              I had trouble to find the button to close that answer window... I
+              was not able to scroll there... had to do 'blind' trial and error
+              with the 'tab'-button". This box had no height limit and no
+              scrolling, so a long reply simply grew past the bottom of the
+              screen and took the only way out with it — the backdrop has no
+              click-to-close either. Now the box is capped, the text scrolls,
+              and the button lives in a fixed footer OUTSIDE the scroll area, so
+              no length of reply can ever put it out of reach. */}
+          <div style={{
+            background: '#26323f', borderRadius: 10, width: 460, maxWidth: '90vw',
+            maxHeight: '85vh', display: 'flex', flexDirection: 'column', color: '#e8e4d8',
+          }}>
+            <div style={{ overflowY: 'auto', padding: '22px 22px 0' }}>
+              <h3 style={{ marginTop: 0 }}>We replied to your report 📨</h3>
+              <div style={{ fontSize: 13, opacity: 0.75, marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+                You reported: “{stripReporterMarker(reply.message)}”
+              </div>
+              {/* pre-wrap: replies are written in paragraphs, and without this
+                  every newline collapsed into a space and arrived as one slab. */}
+              <div style={{
+                background: '#1d2a36', borderLeft: '3px solid #5a8', borderRadius: 4,
+                padding: '10px 12px', whiteSpace: 'pre-wrap',
+              }}>
+                {reply.resolution?.note}
+              </div>
             </div>
-            <div style={{ background: '#1d2a36', borderLeft: '3px solid #5a8', borderRadius: 4, padding: '10px 12px' }}>
-              {reply.resolution?.note}
-            </div>
-            <div style={{ textAlign: 'right', marginTop: 14 }}>
+            <div style={{
+              flex: '0 0 auto', textAlign: 'right', padding: '12px 22px 18px',
+              borderTop: '1px solid #34465a',
+            }}>
               <button style={{ padding: '8px 14px', cursor: 'pointer' }} onClick={dismissReply}>Thanks!</button>
             </div>
           </div>
