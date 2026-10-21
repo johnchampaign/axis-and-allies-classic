@@ -59,17 +59,15 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@10 as of 2026-10-18 — a fleet no longer leaves its own new
-  // transports to die. @9 stopped a strike sailing off with the last warship
-  // guarding boats already afloat; @10 covers the boats that do not exist yet,
-  // because they were bought this turn and are placed after every ship has
-  // moved. One warship now waits in the port they will appear in, and it is a
-  // battleship by preference rather than the carrier the strike's own fighters
-  // are counting on to land — and when the carrier IS the only escort, the air
-  // no longer counts its deck at all, so nothing commits to a hull that is
-  // staying in port. Fresh rating so the change does not drag the old
-  // one. (@9 was the escort/deck-space pair 2026-10-18, @8 the capital-rally
-  // garrison fix 2026-10-15, @7 ocean choice
+  // Key is standard@11 as of 2026-10-21 — the AI stops leaving its aircraft
+  // somewhere they can be taken cheaply. Planes parked on a square an enemy can
+  // reach, with no infantry of ours standing in front of them, now fly to a
+  // safer field; the old rule left any plane alone that had not fought and was
+  // on friendly ground, and only looked for enemy troops arriving overland, so
+  // a coastal airfield with an invasion fleet offshore read as perfectly safe.
+  // Fresh rating so the change does not drag the old one. (@10 was the
+  // new-transport escort 2026-10-18, @9 the deck-space and escort guards
+  // 2026-10-18, @8 the capital-rally garrison fix 2026-10-15, @7 ocean choice
   // 2026-09-20, @6 port-blockade air 2026-08-18, @5 the carrier-casualty fix
   // 2026-08-14, @4 complex siting 2026-08-12, @3 the sealift-feasibility gate
   // and @2 the Allied garrison fix, both 2026-07-26.)
@@ -80,7 +78,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@10';
+      for (const p of aiPwrs) ai[p] = 'standard@11';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

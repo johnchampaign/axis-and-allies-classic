@@ -74,6 +74,13 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  Also closes the hole that reserve opened in @9's deck-space
  *                  check: a carrier kept home on escort duty no longer counts
  *                  as two seats for a strike it is not sailing on
+ *    'standard@11' 2026-10-21, aircraft are no longer left parked on a square
+ *                  an enemy can reach with no infantry of ours in front of
+ *                  them. The old check skipped any plane that had not fought
+ *                  and stood on friendly land, so planes stayed put long after
+ *                  their garrison marched off, and its danger test looked only
+ *                  for enemy GROUND next door — blind to the amphibious landing
+ *                  that actually takes a coastal airfield
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -86,4 +93,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@8': standard,
   'standard@9': standard,
   'standard@10': standard,
+  'standard@11': standard,
 };

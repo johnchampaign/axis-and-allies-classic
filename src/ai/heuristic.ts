@@ -819,6 +819,25 @@ function combatMove(state: GameState, p: Power): Action | null {
   return null;
 }
 
+/** Is `t` a place our aircraft would be caught without a screen? True only when
+ *  we have no ground unit of our own standing there AND an enemy can actually
+ *  reach it — by land next door, or by putting troops ashore from an adjacent
+ *  sea zone. The sea half is the one the old test missed, and it is how a
+ *  coastal airfield like West Europe actually falls (live report
+ *  sflg7syibomzgz5l). An empty deep-rear square is NOT exposed: nothing can
+ *  get at it, so there is no reason to move off it. */
+function airParkExposed(state: GameState, t: string, p: Power): boolean {
+  if (def(t).water) return false;
+  const screened = terr(state, t).units.some((x) =>
+    x.owner === p && isCombat(x) && UNITS[x.type].domain === 'land');
+  if (screened) return false;
+  return def(t).connections.some((m) =>
+    def(m).water
+      ? terr(state, m).units.some((x) => isEnemy(x.owner, p) && UNITS[x.type].domain === 'sea')
+      : terr(state, m).units.some((x) =>
+          isEnemy(x.owner, p) && isCombat(x) && UNITS[x.type].domain === 'land'));
+}
+
 /** Can an air unit at `from` with `budget` left still reach friendly LAND?
  *  The land half of hasLandingSpot — a plane that can do this needs no deck. */
 function canReachFriendlyLand(state: GameState, from: string, budget: number): boolean {
@@ -1198,13 +1217,23 @@ function noncombat(state: GameState, p: Power): Action | null {
   // 0) transports that idled through combat: load up / reposition for next turn
   const tp = transportPlay(state, p, 'noncombat');
   if (tp) return tp;
-  // 1) land aircraft that flew this turn (or sit somewhere unsafe)
+  // 1) land aircraft that flew this turn, or that are parked somewhere unsafe
   for (const [t, ts] of Object.entries(state.territories)) {
     for (const u of ts.units) {
       if (u.owner !== p || UNITS[u.type].domain !== 'air') continue;
-      const safeHere = !def(t).water && state.turnStartFriendly.includes(t) &&
+      // Staying put is only LEGAL where the square was friendly at turn start
+      // and the plane did not fight (spec §4.3 — a just-captured territory is
+      // not a landing spot).
+      const mayStay = !def(t).water && state.turnStartFriendly.includes(t) &&
         isFriendlySpace(state, t, p) && !u.fought;
-      if (safeHere) continue;
+      // ...but legal is not the same as wise. A plane standing on a square an
+      // enemy can reach, with no infantry of ours in front of it, is a cheap
+      // and very profitable target. That is the report: Germany's planes sat in
+      // West Europe long after the garrison marched off. Only such planes get
+      // reconsidered — everything else keeps the old fast path, or every
+      // aircraft would drift to the safest rear square each turn and the
+      // forward airbases would empty out.
+      if (mayStay && !airParkExposed(state, t, p)) continue;
       const budget = airRange(state, u) - u.movesUsed;
       if (budget <= 0) continue;
       // Land somewhere SAFE, not merely the first friendly square found: a fighter
@@ -1213,21 +1242,49 @@ function noncombat(state: GameState, p: Power): Action | null {
       // Ukraine/Caucasus). Rank reachable friendly landings — avoid squares with
       // enemy ground next door, prefer deeper rear and an existing garrison — but
       // always land somewhere (stranded air is lost, spec §4.3).
+      const safetyOf = (c: string): number => {
+        const adjacentEnemy = def(c).connections.some((m) =>
+          !def(m).water && terr(state, m).units.some((x) =>
+            isEnemy(x.owner, p) && isCombat(x) && UNITS[x.type].domain === 'land'));
+        // Enemy shipping next door can put troops ashore without ever standing
+        // on an adjacent LAND square, so the land-only test above is blind to
+        // the most common way a coastal airfield is taken. Live report
+        // sflg7syibomzgz5l: "AI bad play Germany... Western Europe with 2Ftr,
+        // 1Bmb but no Infantry, so easy to capture for UK and high cost and
+        // lost value for Germany" — West Europe borders the UK's seas, so by
+        // the old test it looked perfectly safe.
+        const amphibThreat = def(c).connections.some((m) =>
+          def(m).water && terr(state, m).units.some((x) =>
+            isEnemy(x.owner, p) && UNITS[x.type].domain === 'sea'));
+        const garrison = terr(state, c).units.some((x) =>
+          x.owner === p && isCombat(x) && UNITS[x.type].domain === 'land');
+        let safety = distanceToEnemy(state, c, p);
+        if (adjacentEnemy) safety -= 50;
+        if (amphibThreat) safety -= 25;
+        // Aircraft are the most expensive thing we own and the worst at holding
+        // ground: a bomber defends at 1. Infantry in front of them is what makes
+        // an attacker pay. Parking 39 IPC of planes on a reachable square with
+        // no ground screen is the specific mistake the report names.
+        if (garrison) safety += 3;
+        else if (adjacentEnemy || amphibThreat) safety -= 40;
+        return safety;
+      };
+      // Compare against staying put, so a plane only moves when somewhere is
+      // genuinely better — otherwise a plane with nowhere good to go would be
+      // re-picked every call and the phase would never end.
+      const hereSafety = mayStay ? safetyOf(t) : Number.NEGATIVE_INFINITY;
       const candidates = state.turnStartFriendly
-        .filter((c) => !def(c).water && isFriendlySpace(state, c, p));
+        .filter((c) => c !== t && !def(c).water && isFriendlySpace(state, c, p));
       let bestLand: { path: string[]; safety: number } | null = null;
       for (const c of candidates) {
         const path = airPath(state, t, c, budget, true);
         if (!path) continue;
-        const adjacentEnemy = def(c).connections.some((m) =>
-          !def(m).water && terr(state, m).units.some((x) =>
-            isEnemy(x.owner, p) && isCombat(x) && UNITS[x.type].domain === 'land'));
-        const garrison = terr(state, c).units.some((x) =>
-          x.owner === p && isCombat(x) && UNITS[x.type].domain === 'land');
-        const safety = distanceToEnemy(state, c, p) + (adjacentEnemy ? -50 : 0) + (garrison ? 3 : 0);
+        const safety = safetyOf(c);
         if (!bestLand || safety > bestLand.safety) bestLand = { path, safety };
       }
-      if (bestLand) return { kind: 'move', unitIds: [u.id], path: bestLand.path };
+      if (bestLand && bestLand.safety > hereSafety) {
+        return { kind: 'move', unitIds: [u.id], path: bestLand.path };
+      }
     }
   }
   // 1b) carrier rescue: sail an idle carrier to a sea zone where own fighters
