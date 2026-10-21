@@ -20,9 +20,9 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     let r = await server.submit(id, token, body.action);
     // if the move handed the decision to an AI power (its turn, or it must pick
     // casualties in a battle), play it now and return the post-AI view
-    const advanced = await advanceAI(makeStore(env), env, id);
-    if (advanced) r = await server.fetch(id, token);
-    return json(r);
+    const ai = await advanceAI(makeStore(env), env, id);
+    if (ai.moved) r = await server.fetch(id, token);
+    return json(ai.pending ? { ...r, aiPending: true } : r);
   } catch (e) {
     return fail(e);
   }

@@ -8,9 +8,9 @@ export const onRequestGet: PagesFunction<Env> = async (ctx) => {
     const { request, env, params } = ctx;
     const id = String(params.id);
     const server = makeServer(request, env);
-    await advanceAI(makeStore(env), env, id);
+    const ai = await advanceAI(makeStore(env), env, id);
     const r = await server.fetch(id, tokenOf(request));
-    return json(r);
+    return json(ai.pending ? { ...r, aiPending: true } : r);
   } catch (e) {
     return fail(e);
   }
