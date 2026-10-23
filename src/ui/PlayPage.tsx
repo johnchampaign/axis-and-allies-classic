@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar } from 'digital-boardgame-framework/client';
+import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar, consumeSeatsFromLocation } from 'digital-boardgame-framework/client';
 import type { RankedInfo } from 'digital-boardgame-framework/client';
 import type { Action, GameState, LogEntry, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
+import { axisAndAlliesAdapter } from '../engine/adapter';
 import { TERRITORIES } from '../engine/data';
 import { ActionPanel, tname } from './ActionPanel';
 import { AiTurnSummary } from './AiTurnSummary';
 import { ArtBoard } from './ArtBoard';
 import { useArtLoaded } from './artCache';
 import { Board } from './Board';
-import { claimSeat, listMyReports, makeChatClient, makeClient, savedTokens, stripReporterMarker, type MyReport } from './client';
+import { claimSeat, listMyReports, makeChatClient, makeClient, savedTokens, saveTokens, stripReporterMarker, type MyReport } from './client';
 import { HoverPanel } from './HoverPanel';
 import { LoadArtModal } from './LoadArtModal';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
@@ -17,7 +18,14 @@ import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
 declare const __DBF_BUILD_ID__: string;
 
 export function PlayPage({ gameId, token: initialToken }: { gameId: string; token: string }) {
-  const wallet = savedTokens(gameId); // hotseat: all tokens this browser holds
+  // A hub-lobby link for a player holding several powers carries
+  // #seats=power:token,… — add them to this browser's wallet (once, on load).
+  useState(() => {
+    const seats = consumeSeatsFromLocation();
+    if (Object.keys(seats).length) saveTokens(gameId, seats);
+    return null;
+  });
+  const wallet = savedTokens(gameId); // hotseat / multi-power: all tokens this browser holds
   const [token, setToken] = useState(initialToken);
   // Ranked identity (anon or signed-in). Kept in a ref so each move carries it
   // to the server (per-move attribution — robust + race-free).
@@ -26,6 +34,15 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   idTokRef.current = identity?.token;
   const client = useMemo(() => makeClient(gameId, token, () => idTokRef.current), [gameId, token]);
   const game = useGame<GameState, Action>(client, { pollMs: 4000 });
+  // Holding several powers: follow whoever must act now (the power whose turn
+  // it is, or a defender choosing casualties), so nobody has to switch by hand.
+  useEffect(() => {
+    const v = game.view;
+    if (!v) return;
+    const actor = axisAndAlliesAdapter.currentActor(v);
+    const t = actor ? wallet[actor] : undefined;
+    if (t && t !== token) setToken(t);
+  }, [game.view, token]); // eslint-disable-line react-hooks/exhaustive-deps
   // Bind this seat's identity on join (covers a player who never gets a turn).
   useEffect(() => {
     if (identity?.token) void claimSeat(gameId, token, identity.token);
