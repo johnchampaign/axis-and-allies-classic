@@ -627,7 +627,12 @@ function MovePanel({
                 Load {plan.loaded} unit{plan.loaded === 1 ? '' : 's'} onto {plan.loads.length} transport{plan.loads.length === 1 ? '' : 's'} in {tname(plan.zone)}
               </button>
               {plan.loaded < chosen.filter((u) => ['infantry', 'armor', 'aaGun'].includes(u.type)).length && (
-                <span style={{ fontSize: 12, opacity: 0.7 }}> (not enough transport space for the rest)</span>
+                // Revised players expect "1 infantry + 1 tank"; Classic forbids
+                // mixing (p. 16), so say why the rest stayed behind.
+                <span style={{ fontSize: 12, opacity: 0.7 }}>
+                  {' '}(not enough transport space for the rest — each transport carries
+                  2 infantry, OR 1 tank, OR 1 AA gun; tanks and infantry can’t share a boat)
+                </span>
               )}
             </div>
           ))}
