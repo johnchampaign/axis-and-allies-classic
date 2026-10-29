@@ -554,6 +554,18 @@ function MovePanel({
   const coastalLand = !!selected && !TERR[selected].water &&
     TERR[selected].connections.some((z) => TERR[z].water);
   const haveLandChosen = chosen.some((u) => ['infantry', 'armor', 'aaGun'].includes(u.type));
+  // Live report "HOW DO YOU PUT unit on transport?": the Load button only appears
+  // once land units are ticked, and selecting the boat itself says nothing about
+  // loading — so with nothing ticked, point at the step that's missing.
+  const roomyTransport = (u: GameState['territories'][string]['units'][number]) =>
+    u.type === 'transport' && u.owner === you && !u.unloaded && u.cargo.length < 2;
+  const landHere = !!selected && !TERR[selected].water &&
+    units.some((u) => ['infantry', 'armor', 'aaGun'].includes(u.type));
+  const boatNextDoor = coastalLand && TERR[selected!].connections.some(
+    (z) => TERR[z].water && (view.territories[z]?.units ?? []).some(roomyTransport),
+  );
+  const boatHere = !!selected && TERR[selected].water &&
+    view.territories[selected].units.some(roomyTransport);
 
   return (
     <div style={box}>
@@ -638,11 +650,25 @@ function MovePanel({
           ))}
           {coastalLand && haveLandChosen && loadPlans.length === 0 && (
             <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
-              To put these on a transport, the transport must already be in the
-              adjacent sea zone with movement still to spend (a boat that has used
-              both its sea moves, or already unloaded, can’t take on more cargo).
+              To put these on a transport, one of your transports must already be
+              in an adjacent sea zone with room aboard (a boat that has already
+              unloaded this turn can’t take on more cargo).
               (Land units can’t move into a sea zone on their own, so sea zones
               don’t show up in the destination list.)
+            </div>
+          )}
+          {chosen.length === 0 && landHere && boatNextDoor && (
+            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+              Your transport is next to this territory. Tick the infantry, tank or AA
+              gun you want to ship (below the map) and a “Load” button appears here.
+            </div>
+          )}
+          {chosen.length === 0 && boatHere && (
+            <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+              To load this transport, click the coastal territory where your troops
+              are, tick them below the map, and press “Load”. Then come back here to
+              sail the transport and unload. Each transport carries 2 infantry, OR
+              1 tank, OR 1 AA gun.
             </div>
           )}
           {transports.length > 1 && (
