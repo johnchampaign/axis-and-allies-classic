@@ -131,15 +131,24 @@ export function ActionPanel({
   const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
   const [confirmSurrender, setConfirmSurrender] = useState(false);
 
+  // A batch (e.g. "all 19" placements) goes to the server one action at a time,
+  // so the board fills in gradually; without a counter it looked like the button
+  // had placed a single unit and stopped (live report, 2026-11-09).
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const act = async (a: Action | Action[]) => {
     setError(null);
     setBusy(true);
+    const list = Array.isArray(a) ? a : [a];
     try {
-      for (const x of Array.isArray(a) ? a : [a]) await submit(x);
+      for (let i = 0; i < list.length; i++) {
+        if (list.length > 1) setProgress({ done: i, total: list.length });
+        await submit(list[i]);
+      }
       clearSelection();
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   };
@@ -167,6 +176,11 @@ export function ActionPanel({
   return (
     <div>
       {error && <div style={{ ...box, background: '#5d2f2f' }}>⚠ {error}</div>}
+      {progress && (
+        <div style={{ ...box, background: '#3d4f2f' }}>
+          Working… {progress.done} of {progress.total} done — please wait.
+        </div>
+      )}
       {canUndo && (
         <button
           style={{ ...btn, marginBottom: 6 }}
@@ -498,6 +512,31 @@ function MovePanel({
   const sbrOffered = phase === 'combatMove' && chosen.length > 0 && chosen.every((u) => u.type === 'bomber');
   const effSbr = sbrOffered && sbr;
 
+  // Air route choice. Enemy AA fires at planes flying OVER its territory, not
+  // just into it (spec §4.4), so the straight-line path can cost planes a
+  // detour would not. When the shortest route crosses enemy AA and a clear one
+  // exists within every plane's remaining move, offer both, defaulting to the
+  // clear one (live report: Finland Norway→Ukraine was only ever routed over
+  // Karelia's AA, never via the Baltic and East Europe).
+  const [airRoute, setAirRoute] = useState<'safe' | 'direct'>('safe');
+  const airUnits = byDomain.get('air') ?? [];
+  const airChoice = useMemo(() => {
+    if (!selected || !effDest || airUnits.length === 0) return null;
+    const aaSpaces = new Set<string>();
+    for (const [t, ts] of Object.entries(view.territories)) {
+      if (!TERR[t].water && t !== effDest &&
+        ts.units.some((u) => u.type === 'aaGun' && POWER_SIDE[u.owner] !== POWER_SIDE[you])) aaSpaces.add(t);
+    }
+    const direct = shortestPath(selected, effDest, view.neutrals, 'air');
+    if (!direct) return null;
+    const overAa = direct.slice(1, -1).filter((t) => aaSpaces.has(t));
+    if (overAa.length === 0) return null;
+    const safe = shortestPath(selected, effDest, view.neutrals, 'air', aaSpaces);
+    const budget = Math.min(...airUnits.map(budgetOf));
+    if (!safe || safe.length - 1 > budget) return null;
+    return { direct, safe, overAa };
+  }, [selected, effDest, selectedUnits, view, you]);
+
   // transports in adjacent sea zones we could load onto
   // bulk loading: distribute the chosen land units across a zone's transports
   // (2 infantry per boat, armor/AA need an empty one — no mixing in Classic)
@@ -584,6 +623,7 @@ function MovePanel({
                 // leave the Move button silently disabled (live report: "Move
                 // shows no reaction"). Default to the (usually only) blitz target.
                 setVia(v === selected && blitzReturnVias.length ? blitzReturnVias[0] : '');
+                setAirRoute('safe');
               }}>
                 <option value="">— destination —</option>
                 {destOptionsFull.map((o) => (
@@ -601,6 +641,17 @@ function MovePanel({
                   ))}
                 </select>
               )}
+              {airChoice && (
+                <select value={airRoute} onChange={(e) => setAirRoute(e.target.value as 'safe' | 'direct')}
+                  style={{ marginLeft: 6 }} title="Enemy AA guns fire at planes flying over their territory">
+                  <option value="safe">
+                    planes via {airChoice.safe.slice(1, -1).map(tname).join(', ')} (avoids AA, {airChoice.safe.length - 1} moves)
+                  </option>
+                  <option value="direct">
+                    planes over {airChoice.overAa.map(tname).join(', ')} (AA fires, {airChoice.direct.length - 1} moves)
+                  </option>
+                </select>
+              )}
               {sbrOffered && (
                 <label style={{ marginLeft: 8 }}>
                   <input type="checkbox" checked={effSbr} onChange={(e) => setSbr(e.target.checked)} /> SBR
@@ -616,6 +667,8 @@ function MovePanel({
                     // honour an explicit blitz waypoint for the land group
                     const path = effVia && d === 'land'
                       ? [selected, effVia, effDest]
+                      : d === 'air' && airChoice
+                      ? (airRoute === 'safe' ? airChoice.safe : airChoice.direct)
                       : shortestPath(
                           selected, effDest, view.neutrals, d,
                           d === 'air' ? new Set<string>() : hostileSpaces,
