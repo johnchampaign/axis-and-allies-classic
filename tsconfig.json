@@ -11,5 +11,5 @@
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types", "node"]
   },
-  "include": ["src", "scripts", "tests", "functions"]
+  "include": ["src", "scripts", "tests", "functions", "server"]
 }

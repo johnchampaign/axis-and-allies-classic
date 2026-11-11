@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame, ChatPanel, UpdateBanner, useIdentity, SignInBar, consumeSeatsFromLocation } from 'digital-boardgame-framework/client';
+import { subscribeMoves } from './realtime';
 import type { RankedInfo } from 'digital-boardgame-framework/client';
 import type { Action, GameState, LogEntry, Power, Unit } from '../engine/types';
 import { TURN_ORDER } from '../engine/types';
@@ -33,7 +34,9 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
   const idTokRef = useRef<string | undefined>(undefined);
   idTokRef.current = identity?.token;
   const client = useMemo(() => makeClient(gameId, token, () => idTokRef.current), [gameId, token]);
-  const game = useGame<GameState, Action>(client, { pollMs: 4000 });
+  // realtime push drives updates; polling drops to useGame's 30 s fallback
+  const subscribe = useMemo(() => subscribeMoves(gameId), [gameId]);
+  const game = useGame<GameState, Action>(client, { subscribe });
   // Holding several powers: follow whoever must act now (the power whose turn
   // it is, or a defender choosing casualties), so nobody has to switch by hand.
   useEffect(() => {

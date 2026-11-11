@@ -19,7 +19,8 @@ const PREFIX = /^v\d+:/;
 // late-game slice measured ~300 ms CPU locally; a killed slice saves nothing,
 // so every poll re-ran it and was killed again). A small fixed slice is a few
 // ms; the response says `aiPending` and the client refetches ~150 ms later to
-// carry the AI on.
+// carry the AI on. On the Linode (server/linode.ts) there is no such limit and
+// AI_MAX_STEPS raises the cap, so a turn takes a few requests, not hundreds.
 const MAX_STEPS = 6;
 
 function decodeSnapshot(raw: string): GameState {
@@ -30,7 +31,7 @@ function encodeSnapshot(state: GameState): string {
 }
 
 /** Play pending AI decisions (turns AND battle responses, e.g. casualty picks
- *  when a human attacks an AI power), at most MAX_STEPS per call. `moved`: the
+ *  when a human attacks an AI power), at most maxSteps per call. `moved`: the
  *  AI acted; `pending`: it stopped at the cap with an AI still to act — the
  *  caller returns `aiPending` so the client fetches again to continue. */
 export async function advanceAI(
@@ -54,12 +55,13 @@ export async function advanceAI(
   const ai = [...new Set<Power>([...(state.ai ?? []), ...fwAiSeats])];
   if (ai.length === 0) return none;
 
+  const maxSteps = Number(env.AI_MAX_STEPS) || MAX_STEPS;
   let steps = 0;
   let pending = false;
   for (;;) {
     const actor = adapter.currentActor(state);
     if (!actor || !ai.includes(actor)) break;
-    if (steps >= MAX_STEPS) { pending = true; break; }
+    if (steps >= maxSteps) { pending = true; break; }
     // heuristic first; fall back to a random legal action if it has no idea or
     // its suggestion is rejected (never let the AI wedge a live game).
     // Math.random only picks WHICH action; the engine dice stay seeded in-state.

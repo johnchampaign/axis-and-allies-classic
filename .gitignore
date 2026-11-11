@@ -9,3 +9,4 @@ public/dev-assets/
 .dev.vars
 
 dummy-non-existing-folder/
+dist-api/

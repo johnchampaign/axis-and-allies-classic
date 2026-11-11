@@ -26,6 +26,12 @@ export interface Env {
   CRON_SECRET?: string;
   /** Shared secret matching the hub's RATINGS_INGEST_KEY (enables ranked play). */
   RATINGS_INGEST_KEY?: string;
+  /** Where functions/api/_middleware.ts forwards /api/* (default
+   *  https://aa-api.johnchampaign.com); 'local' runs the handlers here on
+   *  Cloudflare again — the no-redeploy rollback. */
+  AA_API_ORIGIN?: string;
+  /** advanceAI's per-request step cap (ai.ts); the Linode sets it high. */
+  AI_MAX_STEPS?: string;
 }
 
 export type Server = GameServer<GameState, Action, Power>;

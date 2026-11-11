@@ -7,6 +7,8 @@
     "dev": "node node_modules/vite/bin/vite.js",
     "build": "node node_modules/vite/bin/vite.js build",
     "deploy": "npm run build && node node_modules/wrangler/bin/wrangler.js pages deploy dist --project-name axis-and-allies-classic --branch main --commit-dirty=true",
+    "build:api": "node scripts/build-api.mjs",
+    "deploy:api": "bash scripts/deploy-api.sh",
     "headless": "node node_modules/vite-node/vite-node.mjs scripts/headless.ts",
     "soak": "node node_modules/vite-node/vite-node.mjs scripts/soak.ts",
     "bench": "node node_modules/vite-node/vite-node.mjs scripts/ai-benchmark.ts",

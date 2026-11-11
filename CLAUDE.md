@@ -64,3 +64,18 @@ no UI before the headless soak passes.
   `node_modules/.bin` PATH shim, which cmd.exe splits at the `&`. Every
   script in `package.json` must spell out the `node node_modules/...`
   entry point.
+- **API on the Linode (2026-11-11).** Cloudflare's free plan allows 10 ms of
+  CPU per request; late-game A&A requests and AI turns were being killed
+  (1102) over a thousand times a day, and the 6-step AI slice that dodged it
+  cost about a third of the account's 100k requests/day. Now
+  `functions/api/_middleware.ts` forwards `/api/*` to
+  https://aa-api.johnchampaign.com — John's Linode, through the Cloudflare
+  tunnel — where `server/linode.ts` runs **the same handler files** in Node
+  (`aa-api.service`, env in `/etc/aa-api.env`, `AI_MAX_STEPS=100`).
+  `/api/cron/*` still runs on Cloudflare (the Resend secrets live there).
+  Consequences: a change under `functions/` (or `src/engine`, `src/ai`) ships
+  with **`npm run deploy:api`** (SSH to the Linode; not from a cloud session),
+  not just `npm run deploy`; a new route file must also be added to `ROUTES`
+  in `server/linode.ts`. Rollback without code: set the Pages env var
+  `AA_API_ORIGIN=local`. The play page gets moves by realtime push
+  (`src/ui/realtime.ts`) and polls only every 30 s.
