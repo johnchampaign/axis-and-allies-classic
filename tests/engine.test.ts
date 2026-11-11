@@ -469,6 +469,26 @@ describe('economy', () => {
     expect(s.purchases.length).toBe(1);
   });
 
+  it('a batched place puts all N down in one action, or none if any would fail', () => {
+    let s = at('purchase', 'germany', 23);
+    s = apply(s, { kind: 'purchase', order: { infantry: 3 } }, 'germany');
+    s.phase = 'mobilize';
+    s.battle = null;
+    const inf = () => s.territories.germany.units.filter((u) => u.type === 'infantry').length;
+    const before = inf();
+    expectReject(s, { kind: 'place', type: 'infantry', territory: 'germany', count: 4 }, 'germany', /not that many/);
+    // a limited complex with room for one more: the whole batch is refused, nothing placed
+    const lim = structuredClone(s);
+    lim.territories.germany.units.find((u) => u.type === 'factory')!.factoryLimited = true;
+    lim.placedThisTurn.germany = 9;
+    expectReject(lim, { kind: 'place', type: 'infantry', territory: 'germany', count: 2 }, 'germany', /production limit/);
+    expect(lim.purchases.length).toBe(3);
+    s = apply(s, { kind: 'place', type: 'infantry', territory: 'germany', count: 3 }, 'germany');
+    expect(s.purchases.length).toBe(0);
+    expect(inf()).toBe(before + 3);
+    expect(s.placedThisTurn.germany).toBe(3);
+  });
+
   it('captured factories produce only up to territory value, after one turn', () => {
     const s = at('mobilize', 'germany', 29);
     // steal the russia factory via capture mechanics: simulate post-capture state

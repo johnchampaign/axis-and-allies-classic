@@ -923,6 +923,11 @@ function MobilizePanel({ view, you, act, selected, busy }: {
     if (f.factoryLimited && (view.placedThisTurn[t] ?? 0) >= Math.max(1, TERR[t]?.ipc ?? 0)) return false;
     return true;
   });
+  // units a complex can still take this turn: limited ones cap at their IPC value
+  const room = (t: string): number => {
+    const f = view.territories[t]?.units.find((u) => u.type === 'factory' && u.owner === you);
+    return f?.factoryLimited ? Math.max(1, TERR[t]?.ipc ?? 0) - (view.placedThisTurn[t] ?? 0) : Infinity;
+  };
   // ships go in a friendly sea zone next to one of those complexes — ALL of them,
   // not just the first: West US touches both the Gulf and the Pacific.
   const isEnemyHere = (tid: string) =>
@@ -939,7 +944,10 @@ function MobilizePanel({ view, you, act, selected, busy }: {
   // selection — clicking a territory toggles it off again, and a panel that only
   // works while something is selected is a dead end with no error to react to
   // (a live report: "couldn't place carriers in East US", 2026-09-19).
-  const targets = (t: UnitType): { key: string; label: string; action: Action }[] => {
+  // `max` = how many of this type the target can take at once, so the "all N"
+  // button (one batched action, all-or-nothing) never asks for more than fits.
+  type PlaceAction = Extract<Action, { kind: 'place' }>;
+  const targets = (t: UnitType): { key: string; label: string; action: PlaceAction; max: number }[] => {
     if (t === 'factory') {
       // legal anywhere owned since turn start — far too many to list, so this one
       // stays selection-driven (and says so when nothing is selected).
@@ -950,6 +958,7 @@ function MobilizePanel({ view, you, act, selected, busy }: {
       return [{
         key: selected, label: `place in ${tname(selected)}`,
         action: { kind: 'place', type: t, territory: selected },
+        max: 1,
       }];
     }
     if (UNITS[t].domain === 'sea') {
@@ -961,6 +970,7 @@ function MobilizePanel({ view, you, act, selected, busy }: {
           key: `${factory}|${zone}`,
           label: seaSites.length > 1 ? `place in ${tname(zone)} (via ${tname(factory)})` : `place in ${tname(zone)}`,
           action: { kind: 'place', type: t, territory: factory, seaZone: zone },
+          max: room(factory),
         }));
     }
     return sites
@@ -971,6 +981,7 @@ function MobilizePanel({ view, you, act, selected, busy }: {
       .map((f) => ({
         key: f, label: `place in ${tname(f)}`,
         action: { kind: 'place', type: t, territory: f },
+        max: t === 'aaGun' ? 1 : room(f),
       }));
   };
 
@@ -1001,17 +1012,20 @@ function MobilizePanel({ view, you, act, selected, busy }: {
         return (
           <div key={t} style={{ marginTop: 4 }}>
             {n}× {UNIT_NAME[t]}
-            {dests.map((d) => (
-              <span key={d.key}>
-                <button style={btn} disabled={busy} onClick={() => act(d.action)}>{d.label}</button>
-                {n > 1 && (
-                  <button style={btn} disabled={busy}
-                    onClick={() => act(Array.from({ length: n }, () => d.action))}>
-                    all {n}
-                  </button>
-                )}
-              </span>
-            ))}
+            {dests.map((d) => {
+              const m = Math.min(n, d.max);
+              return (
+                <span key={d.key}>
+                  <button style={btn} disabled={busy} onClick={() => act(d.action)}>{d.label}</button>
+                  {m > 1 && (
+                    <button style={btn} disabled={busy}
+                      onClick={() => act({ ...d.action, count: m })}>
+                      all {m}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
             {dests.length === 0 && (
               <span style={{ fontSize: 12, opacity: 0.7, marginLeft: 6 }}>— {whyNowhere(t)}</span>
             )}

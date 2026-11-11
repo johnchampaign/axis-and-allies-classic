@@ -178,7 +178,9 @@ export type Action =
   | { kind: 'withdrawSubs'; unitIds: number[]; to: string }
   | { kind: 'pass' }
   | { kind: 'rocketAttack'; from: string; target: string }
-  | { kind: 'place'; type: UnitType; territory: string; seaZone?: string }
+  // `count` places that many identical units in one action (the UI's "all N"
+  // button); all-or-nothing, since a failed action leaves state untouched.
+  | { kind: 'place'; type: UnitType; territory: string; seaZone?: string; count?: number }
   | { kind: 'surrender' };
 
 export interface EngineResult { ok: boolean; reason?: string }

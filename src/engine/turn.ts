@@ -234,6 +234,21 @@ export function bfsDistance(from: string, to: string, max: number): number | nul
 export function applyPlace(
   state: GameState, a: Extract<Action, { kind: 'place' }>, actor: Power,
 ): EngineResult {
+  // Batched placement ("all 19 infantry") as one action: one server round trip
+  // instead of 19 (live report: "all" placed units slowly, one by one).
+  const count = a.count ?? 1;
+  if (!Number.isInteger(count) || count < 1) return no('bad placement count');
+  if (count > state.purchases.filter((p) => p.type === a.type).length) return no('not that many units waiting to be placed');
+  for (let k = 0; k < count; k++) {
+    const r = placeOne(state, a, actor);
+    if (!r.ok) return r;
+  }
+  return ok;
+}
+
+function placeOne(
+  state: GameState, a: Extract<Action, { kind: 'place' }>, actor: Power,
+): EngineResult {
   if (state.phase !== 'mobilize') return no('not the mobilize phase');
   const i = state.purchases.findIndex((p) => p.type === a.type);
   if (i < 0) return no('no such unit waiting to be placed');
