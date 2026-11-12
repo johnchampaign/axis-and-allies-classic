@@ -431,6 +431,27 @@ export function applyOffload(
   for (const c of cargo) {
     zoneTs.units.splice(zoneTs.units.indexOf(c), 1);
     destTs.units.push(c);
+    // Landing ENDS the passenger's move for the whole turn (spec §5.2: "A land
+    // unit's boarding and landing is its entire move for the turn: it is
+    // illegal for a land unit to move a territory before boarding or after
+    // landing"). The boarding half was already enforced — applyLoad rejects a
+    // unit whose movedPhase is set — but nothing marked the unit on the way
+    // OUT, so a passenger landed with movesUsed 0 and a clean movedPhase and
+    // could simply walk on.
+    //
+    // Live report o1llt8w3v1jwarzh: "1 Trn with 2 Inf from Angola Sea Zone to
+    // West Africa Sea Zone ... nor is it allowed to do amphibious attack from
+    // 1 Trn into 2 different regions, right?" Right. One transport put two
+    // infantry ashore in French West Africa, and one of them then marched
+    // overland into Algeria — two territories captured off one boat in one
+    // turn. (The offload itself was legal: Algeria is not adjacent to that sea
+    // zone and the engine correctly refuses to unload there. It was the walk
+    // afterwards that should never have been offered.)
+    //
+    // movedPhase resets per TURN in beginTurnSnapshot, not per phase, so this
+    // also stops the passenger moving again in the following noncombat.
+    c.movedPhase = state.phase === 'noncombat' ? 'noncombat' : 'combatMove';
+    c.movesUsed = UNITS[c.type].move;
     if (combatish) {
       c.amphibious = true;
       if (hostile) c.fought = true;
