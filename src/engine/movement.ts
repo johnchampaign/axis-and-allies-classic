@@ -3,7 +3,7 @@
 import { def, UNITS } from './data';
 import {
   airRange, canalOpen, enemyCombatUnits, enemyUnits, hasLandingSpot, isEnemy,
-  isEnemyOccupied, isFriendlySpace, log, ownUnits, rollDice, terr,
+  isEnemyOccupied, isFriendlySpace, log, logLosses, ownUnits, rollDice, terr,
 } from './helpers';
 import { captureTerritory } from './turn';
 import type { Action, EngineResult, GameState, Power, Unit } from './types';
@@ -324,11 +324,18 @@ function moveAir(
     });
     // attacker chooses which planes die (spec §13.11); auto-rule: fighters before bombers
     const order = targets.sort((x, y) => UNITS[x.type].cost - UNITS[y.type].cost);
+    const downed: Unit[] = [];
     for (const victim of order) {
       if (hits <= 0) break;
       survivors.delete(victim);
+      downed.push(victim);
       hits--;
     }
+    // Name what died. The hit COUNT above is not enough: with a mixed group a
+    // player cannot tell whether they lost a fighter or a bomber, and with a
+    // single plane in the group the unit just disappears from the board with
+    // nothing in the log tying it to the AA fire (live report mjgqjropxlygtjfh).
+    logLosses(state, downed, t);
     if (survivors.size === 0) break;
   }
   const fromTs = terr(state, a.path[0]);

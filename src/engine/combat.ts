@@ -2,7 +2,7 @@
 // Dice auto-roll via the seeded Rng; player decisions (casualties, withdrawals, retreat)
 // are explicit actions between automatic steps.
 import { def, UNITS } from './data';
-import { adjacent, isEnemy, log, rollDice, terr } from './helpers';
+import { adjacent, isEnemy, log, logLosses, rollDice, terr } from './helpers';
 import { captureTerritory, pendingBattleSpaces } from './turn';
 import {
   SIDE_OF, TURN_ORDER,
@@ -25,30 +25,6 @@ function roster(units: Unit[]): string {
 
 function battleTs(state: GameState) { return terr(state, state.battle!.territory); }
 
-/** Plain-language casualty line so players can see exactly what they lost each
- * round (live report: "where did my bombers go?" — the summary log never said).
- * Groups by owner so an allied stack reads "uk loses 1 bomber; russia loses 2
- * infantry". */
-function logLosses(state: GameState, units: Unit[]): void {
-  if (units.length === 0) return;
-  const byOwner = new Map<Power, Map<string, number>>();
-  for (const u of units) {
-    if (!byOwner.has(u.owner)) byOwner.set(u.owner, new Map());
-    const m = byOwner.get(u.owner)!;
-    m.set(u.type, (m.get(u.type) ?? 0) + 1);
-  }
-  const parts: string[] = [];
-  const losses: { owner: Power; type: string; count: number }[] = [];
-  for (const [owner, m] of byOwner) {
-    const items = [...m].map(([type, n]) => `${n} ${type}`).join(', '); // "2 infantry" — types read fine uncounted
-    parts.push(`${owner} loses ${items}`);
-    for (const [type, count] of m) losses.push({ owner, type, count });
-  }
-  log(state, `  ${parts.join('; ')}.`, {
-    kind: 'combat.casualties',
-    payload: { territory: state.battle?.territory ?? null, losses },
-  });
-}
 /** Combatant filter: in naval battles, land units present are transport cargo —
  * they cannot fire or be chosen as casualties (they die with their ship, spec §5.2). */
 function fights(state: GameState, u: Unit): boolean {

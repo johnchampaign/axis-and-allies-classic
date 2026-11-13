@@ -194,5 +194,45 @@ export function log(
   }, 500);
 }
 
+/** Plain-language casualty line so players can see exactly what they lost,
+ *  grouped by owner and type, so an allied stack reads "uk loses 1 bomber;
+ *  russia loses 2 infantry". Added for the live report "where did my bombers
+ *  go?" — the summary log never said.
+ *
+ *  Lives here, not in combat.ts, because losses happen outside battle too: AA fire during combat-move overflight downs planes in
+ *  movement.ts, and those deaths used to be recorded only as a hit count.
+ *
+ *  Live report mjgqjropxlygtjfh: "My Jap bomber has gone missing. I guess it
+ *  was hit by Moscow AA, but the log doesn't mention it." The AA fire WAS
+ *  logged ("AA fire over Russia: 1 hit(s) on 1 plane(s)."), but nothing said
+ *  which plane it was, so a player with a mixed group could not tell what they
+ *  had lost — and with one plane in the group it read as a unit vanishing.
+ *
+ *  `territory` defaults to the battle in progress, which is what the three
+ *  in-battle callers want; the overflight caller passes the AA territory,
+ *  since there is no battle during combat movement. */
+export function logLosses(
+  state: GameState, units: Unit[], territory?: string,
+): void {
+  if (units.length === 0) return;
+  const byOwner = new Map<Power, Map<string, number>>();
+  for (const u of units) {
+    if (!byOwner.has(u.owner)) byOwner.set(u.owner, new Map());
+    const m = byOwner.get(u.owner)!;
+    m.set(u.type, (m.get(u.type) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  const losses: { owner: Power; type: string; count: number }[] = [];
+  for (const [owner, m] of byOwner) {
+    const items = [...m].map(([type, n]) => `${n} ${type}`).join(', '); // "2 infantry" — types read fine uncounted
+    parts.push(`${owner} loses ${items}`);
+    for (const [type, count] of m) losses.push({ owner, type, count });
+  }
+  log(state, `  ${parts.join('; ')}.`, {
+    kind: 'combat.casualties',
+    payload: { territory: territory ?? state.battle?.territory ?? null, losses },
+  });
+}
+
 export const allTerritoryEntries = (state: GameState) => Object.entries(state.territories);
 export { TERRITORIES, UNITS, def };
