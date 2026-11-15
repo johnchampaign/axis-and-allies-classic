@@ -77,5 +77,10 @@ no UI before the headless soak passes.
   with **`npm run deploy:api`** (SSH to the Linode; not from a cloud session),
   not just `npm run deploy`; a new route file must also be added to `ROUTES`
   in `server/linode.ts`. Rollback without code: set the Pages env var
-  `AA_API_ORIGIN=local`. The play page gets moves by realtime push
+  `AA_API_ORIGIN=local`. **`npm run check:deploy`** answers "is what's live
+  current?" per target — it asks whether each target's deployed revision
+  contains every commit touching the files *that* target serves, because the two
+  revisions legitimately differ (a UI-only commit never reaches the Linode) and
+  can also match while both are stale. Run it before concluding a bug report is
+  already fixed, and after any deploy. The play page gets moves by realtime push
   (`src/ui/realtime.ts`) and polls only every 30 s.
