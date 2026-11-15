@@ -372,6 +372,24 @@ function MovePanel({
     return out;
   }, [view, you]);
 
+  // An all-armor combat move may blitz THROUGH an enemy territory whose only
+  // pieces are an industrial complex and/or AA gun — they are captured in
+  // passing, not blockers (engine movement.ts, spec §13.20). Live report: a
+  // USSR tank in Ukraine wasn't offered Southern Europe because East Europe
+  // held a lone German factory.
+  const landBlocked = useMemo(() => {
+    const allArmor = phase === 'combatMove' && chosen.length > 0 && chosen.every((u) => u.type === 'armor');
+    if (!allArmor) return hostileSpaces;
+    const out = new Set<string>();
+    for (const t of hostileSpaces) {
+      const ts = view.territories[t];
+      const onlyStatic = !TERR[t].water && ts.owner !== null && POWER_SIDE[ts.owner] !== POWER_SIDE[you] &&
+        ts.units.every((u) => POWER_SIDE[u.owner] === POWER_SIDE[you] || u.type === 'factory' || u.type === 'aaGun');
+      if (!onlyStatic) out.add(t);
+    }
+    return out;
+  }, [hostileSpaces, phase, selectedUnits, selected, view, you]);
+
   const budgetOf = (u: Unit): number => {
     let move = UNITS[u.type].move;
     if (view.techs[you].includes('longRangeAircraft')) {
@@ -421,7 +439,7 @@ function MovePanel({
             seen.set(n, dist);
             // neutrals and hostile spaces are reachable destinations but never
             // expanded through (ships can't pass enemy-occupied zones)
-            const blockedHere = d !== 'air' && hostileSpaces.has(n);
+            const blockedHere = d !== 'air' && (d === 'land' ? landBlocked : hostileSpaces).has(n);
             if (!view.neutrals.includes(n) && !blockedHere) next.push(n);
           }
         }
@@ -445,7 +463,7 @@ function MovePanel({
     return [...(combined ?? new Map()).entries()]
       .map(([tid, dist]) => ({ tid, dist }))
       .sort((a, b) => a.dist - b.dist || tname(a.tid).localeCompare(tname(b.tid)));
-  }, [selected, selectedUnits]);
+  }, [selected, selectedUnits, landBlocked]);
 
   // Blitz waypoint: armor moving 2 may pass THROUGH an empty enemy territory to
   // capture it in passing, then attack on. When the target is also directly
@@ -671,7 +689,7 @@ function MovePanel({
                       ? (airRoute === 'safe' ? airChoice.safe : airChoice.direct)
                       : shortestPath(
                           selected, effDest, view.neutrals, d,
-                          d === 'air' ? new Set<string>() : hostileSpaces,
+                          d === 'air' ? new Set<string>() : d === 'land' ? landBlocked : hostileSpaces,
                         );
                     if (!path) { return; }
                     moves.push({
