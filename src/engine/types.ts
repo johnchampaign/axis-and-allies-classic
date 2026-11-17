@@ -154,7 +154,11 @@ export interface GameState {
    *  rated play keep the asymmetric conditions the AI is tuned against. */
   alliedEconWin?: number | null;
   log: LogEntry[];
-  /** Powers played by the server AI (random legal moves). Set at game creation. */
+  /** Every power played by the AI, however it is driven — the human-vs-AI turn
+   *  separator for the game-log upload, the AI turn summary, the opening-book
+   *  miner and the triage scripts. Set at game creation (see `resolveAiSeats`).
+   *  Games created before 2026-11-17 record only legacy seats here, so a rated
+   *  game against the AI from before then reads as having none. */
   ai?: Power[];
   /** Monotonic action counter (one per successfully applied action). Lets the
    *  undo feature identify the previous game position unambiguously under the

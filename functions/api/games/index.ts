@@ -31,6 +31,45 @@ interface CreateBody {
 const ALLIED_ECON_MIN = 100;
 const ALLIED_ECON_MAX = 147;
 
+// Framework server-driven AI difficulty keys (rated). EVERY key ever shipped
+// stays accepted. 'standard@11' is what the current Lobby sends; the older ones
+// are what a browser running cached JS still sends (iOS Safari caches
+// indefinitely). Dropping a retired key would silently create those games with
+// no AI seats at all — so this list only ever grows.
+const AI_KEYS = new Set(['standard', 'standard@2', 'standard@3', 'standard@4', 'standard@5', 'standard@6', 'standard@7', 'standard@8', 'standard@9', 'standard@10', 'standard@11']);
+
+/** Which seats the AI plays, split by how they are driven.
+ *
+ *  `all` is what goes into `state.ai`, which is the human-vs-AI turn separator
+ *  read by the end-of-game log upload, the AI turn summary panel, the
+ *  opening-book miner and the triage scripts. Framework-identity seats used to
+ *  be left out of it, so every rated game against the AI recorded itself as
+ *  having no AI seats at all: the uploaded tuning corpus could not be split
+ *  into vs-AI and vs-human, and the miner read the AI's own moves as human
+ *  openings. Live report 5tfufya73b6mzc93 is the giveaway — it complains about
+ *  Allied AI play in a game whose own record says `ai seats: none`.
+ *
+ *  Listing a framework seat in `state.ai` is inert for play: advanceAI unions
+ *  `state.ai` with the `ai:`-identity seats and drives every seat through the
+ *  same chooseAction path, so naming a seat here changes no decision. */
+export function resolveAiSeats(body: Pick<CreateBody, 'ai' | 'aiPowers'>): {
+  fwAi: Partial<Record<Power, string>>; legacyAi: Power[]; all: Power[];
+} {
+  const fwAi = Object.fromEntries(
+    Object.entries(body.ai ?? {})
+      .filter(([p, d]) => TURN_ORDER.includes(p as Power) && AI_KEYS.has(d as string)),
+  ) as Partial<Record<Power, string>>;
+  const fwAiPowers = Object.keys(fwAi) as Power[];
+
+  // Legacy in-memory AI seats (NOT also framework-driven — that would
+  // double-drive the same power).
+  const legacyAi = (body.aiPowers ?? []).filter(
+    (p): p is Power => TURN_ORDER.includes(p) && !fwAiPowers.includes(p),
+  );
+
+  return { fwAi, legacyAi, all: [...new Set<Power>([...fwAiPowers, ...legacyAi])] };
+}
+
 export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   try {
     const { request, env, waitUntil } = ctx;
@@ -41,26 +80,9 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       ? (body.seed as number) >>> 0
       : crypto.getRandomValues(new Uint32Array(1))[0];
 
-    // Framework server-driven AI seats (rated). Only known difficulty keys.
-    // EVERY key ever shipped stays accepted. 'standard@11' is what the current
-    // Lobby sends; the older ones are what a browser running cached JS still
-    // sends (iOS Safari caches indefinitely). Dropping a retired key would
-    // silently create those games with no AI seats at all — so this list only
-    // ever grows.
-    const AI_KEYS = new Set(['standard', 'standard@2', 'standard@3', 'standard@4', 'standard@5', 'standard@6', 'standard@7', 'standard@8', 'standard@9', 'standard@10', 'standard@11']);
-    const fwAi = Object.fromEntries(
-      Object.entries(body.ai ?? {})
-        .filter(([p, d]) => TURN_ORDER.includes(p as Power) && AI_KEYS.has(d as string)),
-    ) as Partial<Record<Power, string>>;
+    const { fwAi, all: allAiList } = resolveAiSeats(body);
     const fwAiPowers = Object.keys(fwAi) as Power[];
-
-    // Legacy in-memory AI seats (NOT also framework-driven — that would
-    // double-drive the same power).
-    const legacyAi = (body.aiPowers ?? []).filter(
-      (p): p is Power => TURN_ORDER.includes(p) && !fwAiPowers.includes(p),
-    );
-
-    const allAi = new Set([...fwAiPowers, ...legacyAi]);
+    const allAi = new Set(allAiList);
     if (allAi.size >= TURN_ORDER.length) {
       // an all-AI game has no one to finish it and can grow without bound
       return json({ error: 'at least one power must be human' }, 400);
@@ -82,9 +104,9 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     }
 
     const result = await server.createGame({
-      // Only legacy AI powers go into state.ai (the advanceAI path reads it).
-      // Framework-driven powers are marked via meta.identities by createGame.
-      initialState: createGame(seed, legacyAi, { alliedEconWin }),
+      // state.ai records EVERY AI seat (see resolveAiSeats); framework-driven
+      // powers are ALSO marked via meta.identities by createGame below.
+      initialState: createGame(seed, allAiList, { alliedEconWin }),
       players: TURN_ORDER,
       emails: body.emails,
       ...(fwAiPowers.length ? { ai: fwAi } : {}),
