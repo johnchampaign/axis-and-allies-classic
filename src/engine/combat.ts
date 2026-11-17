@@ -357,20 +357,30 @@ function applyCasualtyChoice(state: GameState, ids: number[]): void {
     if (ph.side === 'defender' && ph.firesBack) {
       b.defenderCasualties.push(id); // fires back this round, removed after (spec §6.2)
     } else {
-      killUnit(state, ts, u);
-      killed.push(u);
+      killed.push(u, ...killUnit(state, ts, u));
     }
   }
   logLosses(state, killed); // defender firesBack losses are logged when removed (endOfRound)
 }
 
-function killUnit(state: GameState, ts: { units: Unit[] }, u: Unit): void {
+/** Remove a casualty, and with it anything it was carrying (spec §5.2: cargo
+ *  dies with its transport). Returns the passengers that went down, because the
+ *  caller has to NAME them: removing cargo without a log line is how "where did
+ *  my infantry go?" happens — the same silent-loss bug as overflight AA
+ *  (live report 82lt2b2dofn9db37, item 15: "when a transport is sunk, list its
+ *  cargo in the game log"). */
+function killUnit(state: GameState, ts: { units: Unit[] }, u: Unit): Unit[] {
   const i = ts.units.indexOf(u);
   if (i >= 0) ts.units.splice(i, 1);
+  const drowned: Unit[] = [];
   for (const cid of u.cargo) {
     const c = ts.units.find((x) => x.id === cid);
-    if (c) ts.units.splice(ts.units.indexOf(c), 1);
+    if (c) {
+      ts.units.splice(ts.units.indexOf(c), 1);
+      drowned.push(c);
+    }
   }
+  return drowned;
 }
 
 /** After all attacker-fire casualties are chosen: defender fires, attacker picks losses,
@@ -422,7 +432,7 @@ function endOfRound(state: GameState): void {
   const removed: Unit[] = [];
   for (const id of b.defenderCasualties) {
     const u = ts.units.find((x) => x.id === id);
-    if (u) { killUnit(state, ts, u); removed.push(u); }
+    if (u) removed.push(u, ...killUnit(state, ts, u));
   }
   logLosses(state, removed);
   b.defenderCasualties = [];
