@@ -129,6 +129,7 @@ export function ActionPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
+  const [confirmUnplaced, setConfirmUnplaced] = useState<{ type: string; count: number }[] | null>(null);
   const [confirmSurrender, setConfirmSurrender] = useState(false);
 
   // A batch (e.g. "all 19" placements) goes to the server one action at a time,
@@ -219,11 +220,44 @@ export function ActionPanel({
             End phase anyway (lose {confirmCrash.reduce((s, d) => s + d.count, 0)})
           </button>
         </div>
+      ) : confirmUnplaced ? (
+        <div style={{ ...box, border: '2px solid #c0392b' }}>
+          <b>⚠ Units will be lost!</b>
+          <div style={{ fontSize: 13, margin: '6px 0' }}>
+            You have paid for these but not placed them yet, and ending the phase
+            forfeits them along with the IPCs they cost:
+            <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+              {confirmUnplaced.map((d, i) => (
+                <li key={i}>{d.count}× {UNIT_NAME[d.type as UnitType] ?? d.type}</li>
+              ))}
+            </ul>
+            Place them at one of your industrial complexes first. If no complex has
+            room left, they cannot be placed at all and will be lost.
+          </div>
+          <button style={primary} disabled={busy} onClick={() => setConfirmUnplaced(null)}>
+            Go back and place them
+          </button>
+          <button style={btn} disabled={busy}
+            onClick={() => { setConfirmUnplaced(null); act({ kind: 'endPhase' }); }}>
+            End phase anyway (lose {confirmUnplaced.reduce((s, d) => s + d.count, 0)})
+          </button>
+        </div>
       ) : (
         <button style={btn} disabled={busy} onClick={() => {
           if (view.phase === 'noncombat') {
             const doomed = doomedAircraft(view, you);
             if (doomed.length > 0) { setConfirmCrash(doomed); return; }
+          }
+          // Unplaced purchases are forfeited with their IPCs (spec §1.2, engine
+          // turn.ts "unplaced purchases are lost"). Live report 82lt2b2dofn9db37,
+          // item 13: "If I click End mobilize phase when I still have units to
+          // place, please give me a reminder." An earlier report lost two
+          // transports this way without being asked.
+          if (view.phase === 'mobilize' && view.purchases.length > 0) {
+            const byType = new Map<string, number>();
+            for (const q of view.purchases) byType.set(q.type, (byType.get(q.type) ?? 0) + 1);
+            setConfirmUnplaced([...byType].map(([type, count]) => ({ type, count })));
+            return;
           }
           act({ kind: 'endPhase' });
         }}>
