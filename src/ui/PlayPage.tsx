@@ -306,7 +306,14 @@ function UnitPicker({
   selectedUnits: number[]; setSelectedUnits: (ids: number[]) => void;
 }) {
   const units = view.territories[selected].units;
-  const mine = units.filter((u) => u.owner === you);
+  // An industrial complex can never move (spec §4.1 — the engine refuses it), so
+  // it does not belong among the steppers. Live report p1xncpi2kwtw50rt item 17:
+  // "disable the selection on factory (as it's immovable anyhow and I keep
+  // accidently selecting it)" — ticking one produced a selection the Move button
+  // then silently refused. It still SHOWS below, greyed, because you want to see
+  // that the territory has one; it just cannot be picked.
+  const mine = units.filter((u) => u.owner === you && u.type !== 'factory');
+  const myImmovable = units.filter((u) => u.owner === you && u.type === 'factory');
   // transports (and carriers) split into separate rows by cargo state, so a
   // loaded transport can be moved while its empty sister stays behind
   const groupKey = (u: Unit) =>
@@ -343,6 +350,21 @@ function UnitPicker({
       <b>{tname(selected)}</b>
       {view.territories[selected].owner && ` — ${POWER_NAME[view.territories[selected].owner!]}`}
       {units.length === 0 && <div style={{ opacity: 0.6 }}>empty</div>}
+      {/* Live report p1xncpi2kwtw50rt item 18: "a tick box for select ALL units
+          in the territory". Per-type "all" existed; clearing a whole stack still
+          took one click per type. Only worth showing when there is more than one
+          type to sweep. */}
+      {groups.size > 1 && (
+        <div style={{ margin: '4px 0 6px' }}>
+          <button style={sBtn} onClick={() => setSelectedUnits([
+            ...selectedUnits.filter((id) => !mine.some((u) => u.id === id)),
+            ...mine.map((u) => u.id),
+          ])}>select all</button>
+          <button style={sBtn} onClick={() => setSelectedUnits(
+            selectedUnits.filter((id) => !mine.some((u) => u.id === id)),
+          )}>select none</button>
+        </div>
+      )}
       {[...groups.entries()].map(([key, list]) => {
         const type = key.split('|')[0];
         const perCargo = Number(key.split('|')[1] ?? 0);
@@ -361,6 +383,12 @@ function UnitPicker({
           </div>
         );
       })}
+      {myImmovable.length > 0 && (
+        <div style={{ opacity: 0.6, margin: '2px 0' }}>
+          <span style={{ color: POWER_COLOR[you] }}>■</span> {UNIT_NAME.factory}
+          {myImmovable.length > 1 ? ` ×${myImmovable.length}` : ''} (cannot move)
+        </div>
+      )}
       {[...otherCounts.entries()].map(([k, n]) => {
         const [owner, type] = k.split(':') as [Power, string];
         return (
@@ -518,7 +546,8 @@ function ReportsWidget({ reportBug }: { reportBug: (msg: string, severity?: 'bug
       {mode === 'send' && (
         <Modal onClose={() => { setMsg(''); setMode('closed'); }}>
           <h3 style={{ marginTop: 0 }}>Report a problem</h3>
-          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={4} style={{ width: '100%', boxSizing: 'border-box' }}
+          <textarea value={msg} onChange={(e) => setMsg(e.target.value)} rows={10}
+            style={{ width: '100%', boxSizing: 'border-box', minHeight: 160, resize: 'vertical', fontFamily: 'inherit', fontSize: 14 }}
             placeholder="What went wrong?" autoFocus />
           <div style={{ textAlign: 'right', marginTop: 10 }}>
             <button onClick={() => { setMsg(''); setMode('closed'); }}>Cancel</button>
@@ -638,7 +667,12 @@ function Modal({ onClose, children }: { onClose: () => void; children: React.Rea
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: '#26323f', borderRadius: 10, padding: 22, width: 460, maxWidth: '90vw', maxHeight: '80vh', overflowY: 'auto', color: '#e8e4d8' }}
+        // 680 rather than 460: this modal carries the problem-report form, the
+        // message thread and the "my reports" list, and at 460 all three were a
+        // narrow column you scrolled a lot. Live report p1xncpi2kwtw50rt item 19:
+        // "Make the problem report and message windows bigger". Still capped at
+        // 90vw, so a phone is unaffected.
+        style={{ background: '#26323f', borderRadius: 10, padding: 22, width: 680, maxWidth: '90vw', maxHeight: '85vh', overflowY: 'auto', color: '#e8e4d8' }}
       >
         {children}
       </div>

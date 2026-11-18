@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
 import { SIDE_OF, TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
-import { POWER_NAME, UNIT_NAME } from './theme';
+import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
 
 // Player-facing names + effect descriptions for the six weapon-development techs.
 // Effects mirror the engine (combat.ts / turn.ts / helpers.ts).
@@ -900,9 +900,18 @@ function BattlePanel({
       {!myDecision && <div>Waiting for the other side…</div>}
       {myDecision && ph && (
         <div>
+          {/* Name the power you are deciding FOR. Live report p1xncpi2kwtw50rt
+              item 21: "Now I'm playing against myself. When I have to choose
+              casualties, state which power I'm choosing for." In a hotseat game
+              one browser holds every seat, so "defending units" alone does not
+              say whose army is about to lose men — and the choice is made twice
+              in the same battle, once per side. `legal` is computed for `you`,
+              so when this panel is live `you` IS the deciding seat. */}
+          <div style={{ color: POWER_COLOR[you], fontWeight: 600 }}>
+            {POWER_NAME[you]} casualties — {ph.side === 'defender' ? 'defending' : 'attacking'}
+          </div>
           <div>
-            Choose <b>{ph.hits}</b> casualt{ph.hits === 1 ? 'y' : 'ies'} ({ph.side === 'defender' ? 'defending' : 'attacking'} units)
-            — selected {total}:
+            Choose <b>{ph.hits}</b> casualt{ph.hits === 1 ? 'y' : 'ies'} — selected {total}:
           </div>
           {groups.map((g) => {
             const k = `${g.owner}:${g.type}`;
