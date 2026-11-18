@@ -6,10 +6,69 @@ import {
   isEnemyOccupied, isFriendlySpace, log, logLosses, ownUnits, rollDice, terr,
 } from './helpers';
 import { captureTerritory } from './turn';
-import type { Action, EngineResult, GameState, Power, Unit } from './types';
+import type { Action, EngineResult, GameState, Power, Unit, UnitType } from './types';
 
 const ok: EngineResult = { ok: true };
 const no = (reason: string): EngineResult => ({ ok: false, reason });
+
+/** Group units for a log line — "2 infantry, 1 armor" — plus the structured
+ *  counts analyzers read (same shape as logLosses' `losses`). */
+function summarize(units: Unit[]): { text: string; counts: { type: UnitType; count: number }[] } {
+  const by = new Map<UnitType, number>();
+  for (const u of units) by.set(u.type, (by.get(u.type) ?? 0) + 1);
+  const counts = [...by].map(([type, count]) => ({ type, count }));
+  // Display names, lowercased and left unpluralised — "2 infantry", "1 armor",
+  // "2 aircraft carrier" — matching logLosses, whose note says types read fine
+  // uncounted. Better than the raw keys, which would print "1 aaGun".
+  const text = counts.map(({ type, count }) => `${count} ${UNITS[type].name.toLowerCase()}`).join(', ');
+  return { text, counts };
+}
+
+/** Verb by domain, so the line says what kind of movement it was without the
+ *  player having to know which units are which. */
+const MOVE_VERB = { land: 'moves', sea: 'sails', air: 'flies' } as const;
+
+/** Record a movement. Until this existed the log carried battles, purchases,
+ *  captures and income but not one single march, so an opponent's entire turn
+ *  was invisible between "germany's turn" and "a battle started in France" —
+ *  you saw the consequences and never the decisions.
+ *
+ *  Live report 3req4u5j940wj9z6 asked for this (suggestion 9) and, in the same
+ *  breath, that the AI "movements are almost random": you cannot judge movement
+ *  you are never shown, and neither could we — this is the instrument as much
+ *  as the feature.
+ *
+ *  Called BEFORE the per-domain handler runs so this line precedes the AA-fire,
+ *  neutral-violation and blitz-capture lines the move itself provokes. A move a
+ *  handler then rejects takes its line down with it: apply.ts discards the whole
+ *  mutated clone on failure, log included. */
+function logMove(
+  state: GameState, actor: Power, units: Unit[], passengers: Unit[], path: string[],
+  domain: 'land' | 'sea' | 'air', sbr: boolean,
+): void {
+  const { text, counts } = summarize(units);
+  const route = path.map((t) => def(t).name).join(' \u2192 ');
+  // Name who is riding along. A transport that sails the turn after loading
+  // otherwise reads as an empty boat moving, and the infantry aboard are
+  // mentioned nowhere between boarding and landing — the same invisibility that
+  // made a sunk transport's cargo vanish from the log (spec §5.2).
+  const riding = passengers.length > 0 ? summarize(passengers) : null;
+  log(
+    state,
+    `${actor} ${MOVE_VERB[domain]} ${text}` +
+      `${riding ? ` carrying ${riding.text}` : ''}: ${route}` +
+      `${sbr ? ' (strategic bombing raid)' : ''}`,
+    {
+      kind: 'move',
+      side: actor,
+      payload: {
+        from: path[0], to: path[path.length - 1], path, domain, units: counts,
+        ...(riding ? { carrying: riding.counts } : {}),
+        ...(sbr ? { sbr: true } : {}),
+      },
+    },
+  );
+}
 
 export function applyMove(
   state: GameState, a: Extract<Action, { kind: 'move' }>, actor: Power,
@@ -46,6 +105,19 @@ export function applyMove(
 
   const steps = a.path.length - 1;
   const dest = a.path[a.path.length - 1];
+
+  // Passengers we can name at this point: cargo already aboard the moving ships
+  // plus the fighters this action asks a carrier to take. (moveSea may also
+  // auto-carry stranded fighters in noncombat; those are decided downstream, so
+  // the line names only what the action itself declares.)
+  const passengers: Unit[] = [...carried];
+  for (const u of units) {
+    for (const cid of u.cargo) {
+      const c = fromTs.units.find((x) => x.id === cid);
+      if (c) passengers.push(c);
+    }
+  }
+  logMove(state, actor, units, passengers, a.path, domain, !!a.sbr);
 
   if (domain === 'land') return moveLand(state, a, actor, units, steps, dest);
   if (domain === 'sea') return moveSea(state, a, actor, units, carried, steps, dest);
@@ -397,6 +469,12 @@ export function applyLoad(
   // capacity quirk (spec §5.1): 2 inf OR 1 tank OR 1 AA — no mixing
   const all = [...existing, ...cargoUnits.map((c) => c.unit)];
   if (all.length > 1 && all.some((u) => u.type !== 'infantry')) return no('a transport carries 2 infantry OR 1 tank OR 1 AA gun');
+  const boarding = summarize(cargoUnits.map((c) => c.unit));
+  log(state, `${actor} loads ${boarding.text} onto a transport in ${def(zone).name}.`, {
+    kind: 'move.load', side: actor,
+    payload: { zone, transport: a.transportId, units: boarding.counts },
+  });
+
   for (const c of cargoUnits) {
     const ts = terr(state, c.at);
     ts.units.splice(ts.units.indexOf(c.unit), 1);
@@ -426,15 +504,28 @@ export function applyOffload(
   const hostile = enemyCombatUnits(state, a.to, actor).length > 0;
   const enemyControlled = destTs.owner !== null && isEnemy(destTs.owner, actor);
   const neutral = state.neutrals.includes(a.to);
-  if (state.phase === 'noncombat') {
-    if (hostile || enemyControlled || neutral) return no('noncombat unloading requires a friendly territory');
-  } else if (neutral) {
-    violateNeutral(state, a.to, actor);
+  if (state.phase === 'noncombat' && (hostile || enemyControlled || neutral)) {
+    return no('noncombat unloading requires a friendly territory');
   }
 
   const combatish = state.phase === 'combatMove' || state.phase === 'combat';
   const zoneTs = terr(state, tr.at);
   const cargo = tr.unit.cargo.map((id) => zoneTs.units.find((u) => u.id === id)!).filter(Boolean);
+
+  // Before violateNeutral/captureTerritory, so the landing reads ahead of what
+  // it triggers. The guard above was an if/else chain over the same conditions;
+  // splitting it only moves the neutral penalty below this line.
+  const landing = summarize(cargo);
+  log(state, `${actor} lands ${landing.text}: ${def(tr.at).name} \u2192 ${def(a.to).name}` +
+    `${combatish && hostile ? ' (amphibious assault)' : ''}`, {
+    kind: 'move.offload', side: actor,
+    payload: {
+      from: tr.at, to: a.to, transport: a.transportId, units: landing.counts,
+      amphibious: combatish, contested: hostile,
+    },
+  });
+
+  if (state.phase !== 'noncombat' && neutral) violateNeutral(state, a.to, actor);
   for (const c of cargo) {
     zoneTs.units.splice(zoneTs.units.indexOf(c), 1);
     destTs.units.push(c);

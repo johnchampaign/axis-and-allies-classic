@@ -19,6 +19,9 @@ entry is `secret`.
 | `tech.roll` | `{ dice, cost, rolls: number[] }` | weapons-development dice |
 | `tech.developed` | `{ tech }` | one entry per breakthrough |
 | `tech.rocket` | `{ from, target, victim, damage }` | rocket attack IPC damage |
+| `move` | `{ from, to, path, domain: 'land'\|'sea'\|'air', units: [{ type, count }], carrying?, sbr? }` | one per accepted move action; `path` is every space crossed, `carrying` the cargo/fighters riding along |
+| `move.load` | `{ zone, transport, units: [{ type, count }] }` | land units boarding a transport |
+| `move.offload` | `{ from, to, transport, units: [{ type, count }], amphibious, contested }` | cargo put ashore; `contested` means it landed into a defended territory |
 | `combat.begin` | `{ territory, attacker, amphibious }` | |
 | `combat.roll` | `{ territory, round, role: 'attack'\|'defend', dice, hits, subHits?, defenders? }` | one per fire step |
 | `combat.casualties` | `{ territory, losses: [{ owner, type, count }] }` | grouped unit losses |
@@ -37,9 +40,21 @@ entry is `secret`.
 | `note` | — | low-value prose lines (lost planes, unplaced units, etc.) |
 | `legacy` | — | pre-v2 prose lines wrapped by the schema v1→v2 migration |
 
+## Volume
+
+Movement is by far the most numerous event: measured over full games, roughly
+**46 movement entries per round** against ~38 for everything else combined, and
+the log reaches its 500-entry cap around round 13. Movement therefore roughly
+halves how far back the in-state log reaches. That is a deliberate trade — the
+log exists so a player can see the turn that just happened, and a snapshot
+carries the full board anyway — but it is why the cap lives in one place
+(`log()` in `src/engine/helpers.ts`) and why a line per move is kept terse.
+Coalescing consecutive same-route moves was measured and saves only 15-20%,
+which does not pay for breaking `seq` stability.
+
 ## Migration
 
-Adapter `schemaVersion` is 2. `migrate()` in `src/engine/adapter.ts` converts
+Adapter `schemaVersion` is 3. `migrate()` in `src/engine/adapter.ts` converts
 v1 snapshots (`log: string[]`) with the framework's `upgradeProseLog`, which
 wraps each prose line as a `kind: 'legacy'` entry. UI renderers fall back to
 `entry.msg ?? entry.kind`, and the AI-turn recap still recognizes legacy turn
