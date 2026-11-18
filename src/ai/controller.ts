@@ -81,6 +81,17 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  their garrison marched off, and its danger test looked only
  *                  for enemy GROUND next door — blind to the amphibious landing
  *                  that actually takes a coastal airfield
+ *    'standard@12' 2026-11-18, it picks WHICH ocean to fight in. navalAttack
+ *                  returned the first sea zone in territory-file order that
+ *                  cleared its strength margin, so the choice of war was made
+ *                  by data ordering: Germany opened by flying two fighters and
+ *                  a bomber across the Atlantic at one UK transport. Targets
+ *                  are now ranked by what clearing the zone destroys (cargo
+ *                  included), with anything already committed outranking every
+ *                  untouched target so a strike assembled over several calls
+ *                  cannot split between two oceans. Air flown at a target worth
+ *                  less than the aircraft: 34.2% -> 20.9%. Over 48 games,
+ *                  undecided games 15 -> 8 and the Axis won 3 it had never won
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -94,4 +105,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@9': standard,
   'standard@10': standard,
   'standard@11': standard,
+  'standard@12': standard,
 };

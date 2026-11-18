@@ -59,13 +59,19 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@11 as of 2026-10-21 — the AI stops leaving its aircraft
+  // Key is standard@12 as of 2026-11-18 — the AI now chooses WHICH ocean to
+  // fight in. It used to attack the first sea zone the territory file listed
+  // that it reckoned it could beat, which is how Germany opened by sending two
+  // fighters and a bomber across the Atlantic to sink a single transport;
+  // targets are now ranked by what clearing them destroys. Fresh rating so the
+  // change does not drag the old one. (@11 was the parked-aircraft fix
+  // 2026-10-21 — the AI stops leaving its aircraft
   // somewhere they can be taken cheaply. Planes parked on a square an enemy can
   // reach, with no infantry of ours standing in front of them, now fly to a
   // safer field; the old rule left any plane alone that had not fought and was
   // on friendly ground, and only looked for enemy troops arriving overland, so
-  // a coastal airfield with an invasion fleet offshore read as perfectly safe.
-  // Fresh rating so the change does not drag the old one. (@10 was the
+  // a coastal airfield with an invasion fleet offshore read as perfectly safe.)
+  // (@10 was the
   // new-transport escort 2026-10-18, @9 the deck-space and escort guards
   // 2026-10-18, @8 the capital-rally garrison fix 2026-10-15, @7 ocean choice
   // 2026-09-20, @6 port-blockade air 2026-08-18, @5 the carrier-casualty fix
@@ -78,7 +84,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@11';
+      for (const p of aiPwrs) ai[p] = 'standard@12';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

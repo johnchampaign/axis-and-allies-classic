@@ -929,6 +929,22 @@ function navalAttack(state: GameState, p: Power): Action | null {
   // Where this turn's bought transports will be born, if any. They are not on
   // the board yet, so the escort guard below has to be told about them.
   const berth = newBoatPort(state, p);
+  // EVERY viable target, scored — not the first one the territory file happens
+  // to list. This loop used to `return` the moment a zone cleared the strength
+  // margin, so the choice of war was made by `Object.entries` ordering.
+  // east-canada-sea-zone sits early, so Germany opened by throwing two
+  // fighters, a bomber and a submarine across the Atlantic at a single UK
+  // transport, stranding the air (live reports 3req4u5j940wj9z6 and
+  // vfely20um9bjv2dv: "its movements are almost random ... Japan capturing East
+  // Canada, FROM THE ATLANTIC side!!"). Measured before the change: 31.5% of
+  // naval strikes were 3+ hops, and 34.2% of air strikes flew at a target worth
+  // less than the aircraft committed to it.
+  const candidates: {
+    zone: string; ts: GameState['territories'][string];
+    from: { path: string[]; ships: Unit[] }[];
+    air: { unit: Unit; at: string }[];
+    shipsHere: number; score: number;
+  }[] = [];
   for (const [zone, ts] of Object.entries(state.territories)) {
     if (!def(zone).water) continue;
     const enemies = ts.units.filter((u) => isEnemy(u.owner, p) && isCombat(u) && UNITS[u.type].domain !== 'land');
@@ -1057,25 +1073,46 @@ function navalAttack(state: GameState, p: Power): Action | null {
     const airStrength = air.reduce((s, a) => s + atkVal(a.unit), 0);
     if (from.length === 0 && air.length === 0) continue; // nothing left to send
     if ((committed + reinforcements + airStrength) / defense >= prof.margin) {
-      const next = from[0];
-      if (next) {
-        return { kind: 'move', unitIds: next.ships.map((u) => u.id), path: next.path };
-      }
-      // Ships lead, air follows once they are in. But with NO ships to send at
-      // all, land-based air alone is a perfectly good strike: a sea zone is
-      // cleared, not captured, so nothing of ours has to survive on the water.
-      // Without this a power whose navy was sunk could never break a blockade
-      // of its own port — live report: a single German battleship sat in the
-      // North Sea while the UK, its only harbour shut, stockpiled five idle
-      // aircraft in London (and, being "bottled up", spent every IPC buying
-      // MORE air it would never fly).
-      const committedHere = shipsHere === 0 || ts.units.some((u) => u.owner === p && u.fought);
-      if (committedHere && air.length > 0) {
-        const a = air[0];
-        const range = airRange(state, a.unit) - a.unit.movesUsed;
-        const path = airPath(state, a.at, zone, range, false);
-        if (path) return { kind: 'move', unitIds: [a.unit.id], path };
-      }
+      // What clearing this zone actually destroys: every enemy unit standing in
+      // it, cargo included, because land units aboard a transport go down with
+      // it (spec §5.2). That is why a loaded transport is a fatter prize than
+      // an empty one, and why one lone empty transport is a thin excuse to
+      // commit a strike at all.
+      const prize = ts.units
+        .filter((u) => isEnemy(u.owner, p))
+        .reduce((sum, u) => sum + UNITS[u.type].cost, 0);
+      // FINISH WHAT YOU STARTED. navalAttack returns one move per call, so a
+      // strike is assembled over several calls; if the ranking could change
+      // between them the AI would send its first ship to one ocean and the rest
+      // to another. Anything we already have committed in the zone outranks
+      // every untouched target, which also keeps a fleet already locked in
+      // contact fighting where it stands.
+      const score = (committed > 0 ? 1e6 : 0) + prize;
+      candidates.push({ zone, ts, from, air, shipsHere, score });
+    }
+  }
+  // Best prize first; Array.sort is stable, so equal scores keep the old data
+  // order and the change stays confined to zones that genuinely differ in value.
+  candidates.sort((a, b) => b.score - a.score);
+  for (const c of candidates) {
+    const next = c.from[0];
+    if (next) {
+      return { kind: 'move', unitIds: next.ships.map((u) => u.id), path: next.path };
+    }
+    // Ships lead, air follows once they are in. But with NO ships to send at
+    // all, land-based air alone is a perfectly good strike: a sea zone is
+    // cleared, not captured, so nothing of ours has to survive on the water.
+    // Without this a power whose navy was sunk could never break a blockade
+    // of its own port — live report: a single German battleship sat in the
+    // North Sea while the UK, its only harbour shut, stockpiled five idle
+    // aircraft in London (and, being "bottled up", spent every IPC buying
+    // MORE air it would never fly).
+    const committedHere = c.shipsHere === 0 || c.ts.units.some((u) => u.owner === p && u.fought);
+    if (committedHere && c.air.length > 0) {
+      const a = c.air[0];
+      const range = airRange(state, a.unit) - a.unit.movesUsed;
+      const path = airPath(state, a.at, c.zone, range, false);
+      if (path) return { kind: 'move', unitIds: [a.unit.id], path };
     }
   }
   return null;

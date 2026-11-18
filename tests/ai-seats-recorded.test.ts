@@ -42,7 +42,7 @@ describe('resolveAiSeats', () => {
   });
 
   it('still accepts every difficulty key ever shipped (cached clients)', () => {
-    for (const key of ['standard', 'standard@7', 'standard@11']) {
+    for (const key of ['standard', 'standard@7', 'standard@11', 'standard@12']) {
       expect(resolveAiSeats({ ai: { uk: key } }).all).toEqual(['uk']);
     }
   });
