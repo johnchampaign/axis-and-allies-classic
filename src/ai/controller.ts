@@ -92,6 +92,21 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  cannot split between two oceans. Air flown at a target worth
  *                  less than the aircraft: 34.2% -> 20.9%. Over 48 games,
  *                  undecided games 15 -> 8 and the Axis won 3 it had never won
+ *    'standard@13' 2026-11-19, its warships escort the boats that need them.
+ *                  The escort-duty rule skipped any zone that CONTAINED a
+ *                  transport — presence, not need — so two hulls minding one
+ *                  boat at home read as busy while loaded transports sat bare
+ *                  (live report k41l5xlvnhn93xpj: Japan's whole navy was a
+ *                  battleship and a submarine over one transport in the Japan
+ *                  Sea Zone while three loaded ones, 41 IPC with their cargo
+ *                  and seven Allied aircraft in range, sat alone in the
+ *                  Solomons). A zone now releases only its SURPLUS, never its
+ *                  last escort, and sails to the richest bare stack per hop
+ *                  rather than the nearest. Shipping+cargo left unescorted:
+ *                  20.35 -> 16.90 IPC per power-turn; the share of that left
+ *                  bare while the same power held spare hulls 20.4% -> 7.9%.
+ *                  Over 48 paired games, undecided 8 -> 5, avg round 24.4 ->
+ *                  23.4, no arm worse.
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -106,4 +121,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@10': standard,
   'standard@11': standard,
   'standard@12': standard,
+  'standard@13': standard,
 };

@@ -370,7 +370,22 @@ function factoryExposure(state: GameState, t: string, p: Power): number {
 /** A worthwhile site for a new industrial complex: owned since turn start,
  * no factory yet, real income, reasonably near the enemy. (Gating the BUY on
  * defensibility too was measured and made the AI passive — decisive games
- * 11/12 -> 5/12. Siting is where exposure belongs; see mobilize().) */
+ * 11/12 -> 5/12. Siting is where exposure belongs; see mobilize().)
+ *
+ * DO NOT also gate this on the complex earning its keep. Tried 2026-11-19 after
+ * live report nzd2kpc86h5o1ahw ("Factories in Western and Eastern Europe are
+ * wasted money and moreover a gift to UK and RUS as soon as they conquered
+ * them"), which is TRUE on its own terms and measurable — scripts/probe-factory-
+ * sites.ts over 8 games to r20 found 84% of new complexes no closer to the front
+ * than one that power already owned (mean reach gained -0.46 hops) and 32% in
+ * enemy hands at the end, Germany putting 8 of 10 in West Europe and losing 9.
+ * Requiring a new yard to save marching hops still made the AI worse, monotonically
+ * (48 paired games, decisive of 48):
+ *     no gate (this code)   40        1-hop margin   32        2-hop margin   21
+ * and end-unit counts ROSE 445 -> 567: production that used to appear near the
+ * front now appears at home and never arrives. Badly sited or not, the forward
+ * complex is propping up logistics this AI does not otherwise have. The repair
+ * belongs in movement, not in the shopping list. */
 function goodFactorySite(state: GameState, p: Power): boolean {
   for (const t of state.turnStartFriendly) {
     if (def(t).water || def(t).ipc < 2) continue;
@@ -1359,25 +1374,50 @@ function noncombat(state: GameState, p: Power): Action | null {
       u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport' &&
       !u.movedPhase && !u.fought);
     if (!warship) continue;
-    if (wts.units.some((u) => u.owner === p && u.type === 'transport')) continue; // already escorting
+    // "Already escorting" used to mean only "a transport is in my zone" —
+    // presence, not need. Live report k41l5xlvnhn93xpj: Japan's entire navy was
+    // a battleship and a submarine sitting with ONE transport in the Japan Sea
+    // Zone, while THREE loaded transports — 41 IPC counting their cargo, with
+    // seven Allied aircraft in range — sat alone in the Solomons. Two hulls over
+    // one boat is a surplus. Release the surplus; never the last escort.
+    const hereTrn = wts.units.filter((u) => u.owner === p && u.type === 'transport').length;
+    const hereWar = wts.units.filter((u) =>
+      u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport').length;
+    if (hereTrn > 0 && hereWar - 1 < hereTrn) continue; // leaving would strip these boats
     // A warship held back for transports being built this turn is escorting
     // too, even though the zone looks empty — it is waiting for them. Without
     // this the reserve kept in combat movement would promptly sail off to cover
     // some other lone boat and the new ones would still be born bare.
     if (wz === berth) continue;
     const parents = seaParents(state, wz, p);
-    let best: string[] | null = null;
+    // Nearest-first sent the screen to whichever bare zone was closest, which is
+    // how a lone empty hull outranked three loaded transports. Go by what is
+    // actually at stake per hop travelled: cargo counts, because the infantry
+    // riding a transport drowns with it.
+    let best: { path: string[]; worth: number } | null = null;
     for (const [tz, tts] of Object.entries(state.territories)) {
       if (!def(tz).water || tz === wz) continue;
-      const hasTrn = tts.units.some((u) => u.owner === p && u.type === 'transport');
-      if (!hasTrn) continue;
+      const trns = tts.units.filter((u) => u.owner === p && u.type === 'transport');
+      if (trns.length === 0) continue;
       const escorted = tts.units.some((u) =>
         u.owner === p && UNITS[u.type].domain === 'sea' && u.type !== 'transport');
       if (escorted) continue;
       const path = seaPathTo(parents, wz, tz);
-      if (path && path.length >= 2 && (!best || path.length < best.length)) best = path;
+      if (!path || path.length < 2) continue;
+      let value = 0;
+      for (const t of trns) {
+        value += UNITS.transport.cost;
+        for (const cid of t.cargo) {
+          const c = tts.units.find((u) => u.id === cid);
+          if (c) value += UNITS[c.type].cost;
+        }
+      }
+      const worth = value / Math.max(1, path.length - 1);   // IPC covered per hop
+      if (!best || worth > best.worth) best = { path, worth };
     }
-    if (best) return { kind: 'move', unitIds: [warship.id], path: best.slice(0, Math.min(3, best.length)) };
+    if (best) {
+      return { kind: 'move', unitIds: [warship.id], path: best.path.slice(0, Math.min(3, best.path.length)) };
+    }
   }
   // 2) defensive powers under threat rally everything toward the capital
   const prof = PROFILES[p];

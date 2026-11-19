@@ -32,11 +32,11 @@ const ALLIED_ECON_MIN = 100;
 const ALLIED_ECON_MAX = 147;
 
 // Framework server-driven AI difficulty keys (rated). EVERY key ever shipped
-// stays accepted. 'standard@12' is what the current Lobby sends; the older ones
+// stays accepted. 'standard@13' is what the current Lobby sends; the older ones
 // are what a browser running cached JS still sends (iOS Safari caches
 // indefinitely). Dropping a retired key would silently create those games with
 // no AI seats at all — so this list only ever grows.
-const AI_KEYS = new Set(['standard', 'standard@2', 'standard@3', 'standard@4', 'standard@5', 'standard@6', 'standard@7', 'standard@8', 'standard@9', 'standard@10', 'standard@11', 'standard@12']);
+const AI_KEYS = new Set(['standard', 'standard@2', 'standard@3', 'standard@4', 'standard@5', 'standard@6', 'standard@7', 'standard@8', 'standard@9', 'standard@10', 'standard@11', 'standard@12', 'standard@13']);
 
 /** Which seats the AI plays, split by how they are driven.
  *
