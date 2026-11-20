@@ -25,10 +25,21 @@ import { CAPITAL_OF, SIDE_OF, TURN_ORDER, type Action, type GameState, type Powe
 // §11). The Allies must actively deny it — retake income, liberate capitals.
 const ECON_WIN = 84;
 // Note for anyone reaching for an earlier economic gate than `danger` below:
-// 70 was tried (income crosses 75 only ~1 round before 84, while 70 lands ~6
-// rounds out) and it fires too rarely to matter — all-heuristic axis income
-// peaks at ~66 on average. See the DEAD END note on the amphibious commit in
-// transportPlay().
+// 70 is a DEAD END, but not for the reason first recorded here. The old note
+// said it "fires too rarely to matter — all-heuristic axis income peaks at ~66",
+// which measures the wrong matchup: in self-play nobody rushes production, so of
+// course the gate idles. Re-measured 2026-11-20 on the strong-axis harness at
+// standard@13, where the rush is real, the gate fires in 7 of the 7 games we
+// lose, 10.7 rounds before the Axis crosses 84 (vs 6.3 at 75, and in three of
+// those seven the current gate gives ZERO rounds of warning).
+//
+// Lowering it to 70 anyway changed NOTHING: econ wins 7/16 both arms, peak axis
+// income 75.4 both arms (max 93 both), Russia fell 9/16 both, tournament 41 ->
+// 40 decisive of 48. Warning time was never the bottleneck. `danger` only
+// loosens the attack margin, and the Allies already retake lost income 470 times
+// per 16 games — they cannot HOLD it. Spend effort on holding reconquered
+// ground, not on noticing sooner. See also the DEAD END note on the amphibious
+// commit in transportPlay().
 // DEAD END, do not redo (2026-07-26): re-scoring amphibious targets to prefer
 // undefended income — a free-capture bonus, and an extra income weight once axis
 // production passes 70 — was measured on the strong-axis harness and made things
@@ -240,6 +251,23 @@ function sparesIn(state: GameState, p: Power, t: string): Unit[] {
     u.owner === p && (u.type === 'infantry' || u.type === 'armor'));
   const keep = PROFILES[p].capitalGarrison;
   const spareCount = Math.max(0, all.length - keep);
+  // This floor is a COUNT, not a defence, and that is a known limitation rather
+  // than an oversight. Uploaded games lkixt49ftst45260 and 7zaui9bqk5130n1f
+  // (human Axis vs AI Allies, r3 and r4): Germany massed 14 units in Karelia,
+  // one move from Moscow; Russia held 21 ground units, so the floor of 8 read as
+  // "13 to spare" and released 9 to retake a 3-IPC province. Moscow fell next
+  // turn and the game ended on economics.
+  //
+  // DEAD END, do not redo (2026-11-20): making the floor threat-aware — release
+  // a unit only while the garrison left behind still answers enemyPressureOn —
+  // works exactly as intended and does not help. For ALL powers: capital deficit
+  // 2.64 -> 1.17, capitals lost 9 -> 1 over 8 games, and decisive games 41/48 ->
+  // 26 because it turtles the attackers too. Narrowed to Russia alone: Moscow
+  // fell 9/16 -> 3/16 and much later (r10.8 -> r19.0), yet Axis economic wins got
+  // no better — 7/16 -> 8/16, peak income 75.4 -> 79.3, tournament 41 -> 37.
+  // Moscow's fall is a SYMPTOM. The Axis takes its 84 from the sprawl (south and
+  // west Europe, Caucasus, East Europe, Ukraine and India each fall in 16/16),
+  // so holding the capital only buys rounds while the farm continues.
   // keep infantry home for defense; armor leaves first
   return [...movable].sort((a, b) =>
     (a.type === 'armor' ? 0 : 1) - (b.type === 'armor' ? 0 : 1)).slice(0, spareCount);

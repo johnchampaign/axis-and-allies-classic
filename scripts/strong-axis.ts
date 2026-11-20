@@ -31,6 +31,20 @@
 //     it was stale. Both rows below are fresh paired runs on the same build. --
 //   2026-10-15 re-baseline (standard@7) 5/16          6/16        72.6 (max 94)
 //   2026-10-15 rally last-defender grd  2/16          2/16        65.8 (max 87)
+//  -- re-baselined 2026-11-20: standard@8..@13 shipped since, so the rows above
+//     are stale. Opponent UNCHANGED, so it is still the same yardstick. --
+//   2026-11-20 re-baseline (standard@13) 7/16         7/16        75.4 (max 93)
+//   2026-11-20 threat-aware cap garrison 8/16        11/16        79.3 (max 92)
+//   2026-11-20 danger gate 75 -> 70      7/16         7/16        75.4 (max 93)
+//
+// Both 2026-11-20 experiments were REVERTED and the reasons are in heuristic.ts
+// (sparesIn, and the economic-gate note at the top). The re-baseline row is the
+// one to compare against. Note what it says on its own: the gate and the win
+// line now fire in the SAME 7 games, i.e. by the time the Allies notice, it is
+// already over — and the Allies retake lost income 470 times per 16 games while
+// losing south/west Europe, Caucasus, East Europe, Ukraine and India in 16/16.
+// Holding reconquered ground, not noticing sooner and not defending Moscow
+// harder, is where the remaining gap is.
 //
 // The 2026-10-15 rally-guard row is the fix for live report pr1cd7zmh3wymr58 ("Russia should have
 // defended Kaz, Eve, Nov and/or Cau massively"). Moscow also fell in 3/16 rather
