@@ -44,6 +44,30 @@ export const SETUP = setupJson as unknown as {
 
 export const ALL_TERRITORY_IDS = Object.keys(TERRITORIES);
 
+/** Territory → the power that STARTED the game with a complex there. Complexes
+ *  are never moved or destroyed and a territory holds at most one (p. 14), so a
+ *  complex standing in one of these territories is that original piece. */
+const ORIGINAL_COMPLEX_OWNER: Record<string, Power> = Object.fromEntries(
+  SETUP.placements.filter((p) => p.unit === 'factory').map((p) => [p.territory, p.owner]),
+);
+
+/** "Original industrial complexes" are the ones a power started the game with,
+ *  and they give that power unlimited production (p. 11, 13) — including after
+ *  it loses one and takes it back. In anyone else's hands the same piece is a
+ *  captured, limited "new" complex. */
+export function isOriginalComplexOf(territory: string, power: Power): boolean {
+  return ORIGINAL_COMPLEX_OWNER[territory] === power;
+}
+
+/** Is this complex under the per-turn production limit (spec §9.3)? Checks the
+ *  setup data as well as the flag, so games saved while a power's own recaptured
+ *  complex was wrongly flagged limited play correctly without a migration. */
+export function complexIsLimited(
+  territory: string, factory: { owner: Power; factoryLimited?: boolean },
+): boolean {
+  return !!factory.factoryLimited && !isOriginalComplexOf(territory, factory.owner);
+}
+
 export function def(t: string): TerritoryDef {
   const d = TERRITORIES[t];
   if (!d) throw new Error(`unknown territory: ${t}`);

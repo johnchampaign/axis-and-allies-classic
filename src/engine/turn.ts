@@ -1,5 +1,5 @@
 // Phase flow, economy, capture/liberation, tech, purchase, mobilize, victory. Spec §§1, 6.6–11.
-import { def, UNITS } from './data';
+import { complexIsLimited, def, isOriginalComplexOf, UNITS } from './data';
 import {
   capitalHeldByEnemy, fighterOverflow, isEnemy, isEnemyOccupied, isFriendlySpace,
   log, productionLevel, rollDice, terr,
@@ -30,7 +30,10 @@ export function captureTerritory(
     }
     if (u.type === 'factory' && isEnemy(u.owner, actor)) {
       u.owner = actor;
-      u.factoryLimited = true; // captured complexes have limited production (spec §9.3)
+      // captured complexes have limited production — unless this is the actor
+      // taking back a complex it started the game with (p. 11, 13; spec §9.3).
+      // Either way it is unusable until next turn (spec §6.6).
+      u.factoryLimited = !isOriginalComplexOf(t, actor);
       u.factoryReadyTurn = state.globalTurn + 1; // usable next turn (spec §6.6)
     }
   }
@@ -47,7 +50,7 @@ export function captureTerritory(
     for (const u of ts.units) {
       if ((u.type === 'factory' || u.type === 'aaGun') && !isEnemy(u.owner, actor)) {
         u.owner = original;
-        if (u.type === 'factory' && def(t).originalOwner === original) {
+        if (u.type === 'factory' && isOriginalComplexOf(t, original)) {
           u.factoryLimited = false; // an original complex, back home (spec §9.3)
           u.factoryReadyTurn = undefined;
         }
@@ -275,7 +278,7 @@ function placeOne(
   // limited production for built/captured complexes (spec §9.3)
   const factory = ts.units.find((u) => u.type === 'factory' && u.owner === actor);
   if (!factory) return no('complex missing');
-  if (factory.factoryLimited) {
+  if (complexIsLimited(a.territory, factory)) {
     const cap = Math.max(1, d.ipc);
     const used = state.placedThisTurn[a.territory] ?? 0;
     if (used >= cap) return no('complex production limit reached');

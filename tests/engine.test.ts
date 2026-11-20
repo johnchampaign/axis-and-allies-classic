@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { chooseAction } from '../src/ai/heuristic';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
 import { retreatZones } from '../src/engine/combat';
+import { def } from '../src/engine/data';
 import { createGame } from '../src/engine/setup';
 import { beginTurnSnapshot } from '../src/engine/setup';
 import { pendingBattleSpaces } from '../src/engine/turn';
@@ -255,6 +256,30 @@ describe('combat', () => {
     expect(fac.factoryLimited).toBe(false); // original UK complex, unlimited again
   });
 
+  it('a power retaking its OWN original complex gets unlimited production back (p. 11, 13)', () => {
+    // live report: Russia retook Karelia from Germany and was capped at 3 units
+    let s = at('combatMove', 'russia', 29);
+    clear(s, 'karelia-ssr');
+    s.territories['karelia-ssr'].owner = 'germany';
+    const f = addUnit(s, 'karelia-ssr', 'factory', 'germany', { factoryLimited: true, factoryReadyTurn: 0 });
+    const inf = addUnit(s, 'russia', 'infantry', 'russia');
+    s = apply(s, { kind: 'move', unitIds: [inf.id], path: ['russia', 'karelia-ssr'] }, 'russia');
+    expect(s.territories['karelia-ssr'].owner).toBe('russia');
+    const fac = s.territories['karelia-ssr'].units.find((u) => u.id === f.id)!;
+    expect(fac.owner).toBe('russia');
+    expect(fac.factoryLimited).toBe(false);
+    expect(fac.factoryReadyTurn).toBe(s.globalTurn + 1); // still not usable this turn
+  });
+
+  it('a saved game whose own original complex is still flagged limited places past the cap', () => {
+    let s = at('mobilize', 'russia', 31);
+    const fac = s.territories['karelia-ssr'].units.find((u) => u.type === 'factory')!;
+    fac.factoryLimited = true; // as written by the old capture code
+    s.purchases = Array.from({ length: 5 }, () => ({ type: 'infantry' as const }));
+    for (let i = 0; i < 5; i++) s = apply(s, { kind: 'place', type: 'infantry', territory: 'karelia-ssr' }, 'russia');
+    expect(s.placedThisTurn['karelia-ssr']).toBe(5); // Karelia is worth 3
+  });
+
   it('liberating an allied territory returns it to the original owner', () => {
     let s = at('combatMove', 'uk', 17);
     clear(s, 'karelia-ssr');
@@ -479,9 +504,11 @@ describe('economy', () => {
     expectReject(s, { kind: 'place', type: 'infantry', territory: 'germany', count: 4 }, 'germany', /not that many/);
     // a limited complex with room for one more: the whole batch is refused, nothing placed
     const lim = structuredClone(s);
-    lim.territories.germany.units.find((u) => u.type === 'factory')!.factoryLimited = true;
-    lim.placedThisTurn.germany = 9;
-    expectReject(lim, { kind: 'place', type: 'infantry', territory: 'germany', count: 2 }, 'germany', /production limit/);
+    // (a complex Germany built: its own starting complexes are never limited)
+    addUnit(lim, 'west-europe', 'factory', 'germany', { factoryLimited: true });
+    lim.turnStartFactories.push('west-europe');
+    lim.placedThisTurn['west-europe'] = Math.max(1, def('west-europe').ipc) - 1;
+    expectReject(lim, { kind: 'place', type: 'infantry', territory: 'west-europe', count: 2 }, 'germany', /production limit/);
     expect(lim.purchases.length).toBe(3);
     s = apply(s, { kind: 'place', type: 'infantry', territory: 'germany', count: 3 }, 'germany');
     expect(s.purchases.length).toBe(0);

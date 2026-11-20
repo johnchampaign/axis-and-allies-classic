@@ -2,7 +2,7 @@
 // tryApplyAction/the engine is the legality authority). Every returned action must be
 // individually legal, and the list is never empty while the game is live.
 import { airOnlyAttack, battleActor, defenderSubZones, retreatZones } from './combat';
-import { def, UNITS } from './data';
+import { complexIsLimited, def, UNITS } from './data';
 import {
   airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy,
   isEnemyOccupied, isFriendlySpace, terr,
@@ -341,7 +341,7 @@ function mobilizeActions(state: GameState, actor: Power): Action[] {
       if (ts.owner !== actor) continue;
       const factory = ts.units.find((u) => u.type === 'factory' && u.owner === actor);
       if (!factory) continue;
-      if (factory.factoryLimited) {
+      if (complexIsLimited(t, factory)) {
         const cap = Math.max(1, def(t).ipc);
         if ((state.placedThisTurn[t] ?? 0) >= cap) continue;
       }
