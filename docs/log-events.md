@@ -31,6 +31,8 @@ entry is `secret`.
 | `combat.sbr` | `{ territory, victim, damage, paid, bombers }` | strategic bombing raid |
 | `combat.subWithdraw` | `{ territory, to, count }` | submarine withdrawal |
 | `combat.retreat` | `{ territory, to }` | attacker retreat |
+| `combat.continue` | `{ territory, round }` | attacker chose to fight another round |
+| `combat.noRetreat` | `{ territory, reason: 'amphibious'\|'noRetreatSpace' }` | retreat decision skipped by rule (once per battle) |
 | `combat.result` | `{ territory, outcome: 'attackerClears'\|'defendersHold'\|'airOnlyNoCapture' }` | naval/air outcomes; land captures log `territory.capture` instead |
 | `territory.capture` | `{ territory, by, from, unoccupied }` | |
 | `territory.liberate` | `{ territory, by, for }` | returned to original owner |

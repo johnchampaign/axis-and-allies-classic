@@ -1,7 +1,7 @@
 // Phase-aware action composer. Playbook "Option A": functional over pretty —
 // the engine (tryApplyAction server-side) is the legality authority; the UI
 // optimistically offers actions and surfaces the server's rejection reasons.
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
 import { SIDE_OF, TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
@@ -890,6 +890,23 @@ function BattlePanel({
     lastKey.current = phKey;
     setCounts(cheapestFill());
   }
+  // The fight-on / retreat buttons appear the instant the last casualty is
+  // confirmed, and "Fight another round" is the highlighted one — so a second
+  // click meant for the casualty panel can press the attack for you. Hold the
+  // decision buttons for a beat after they first appear. (Live report
+  // scyqv5vuez2gou0h item 23: a sea battle rolled into round 2 although the
+  // player wanted to retreat; the engine had offered the choice.)
+  const decisionKey = myDecision && !ph ? `${b.territory}:${b.round}:${b.stage}` : '';
+  const [armedKey, setArmedKey] = useState('');
+  useEffect(() => {
+    if (!decisionKey) return;
+    const t = setTimeout(() => setArmedKey(decisionKey), 700);
+    return () => clearTimeout(t);
+  }, [decisionKey]);
+  const armed = armedKey === decisionKey;
+  // Amphibious land battles never offer a retreat (rulebook p. 15; FAQ p. 1) —
+  // say so up front instead of silently rolling round after round.
+  const fightToDeath = b.amphibious && !TERR[b.territory].water;
   const total = groups.reduce((s, g) => s + (counts[`${g.owner}:${g.type}`] ?? 0), 0);
   const pickedIds = groups.flatMap((g) => g.ids.slice(0, counts[`${g.owner}:${g.type}`] ?? 0));
 
@@ -897,6 +914,11 @@ function BattlePanel({
     <div style={{ ...box, border: '2px solid #c0392b' }}>
       <b>Battle: {tname(b.territory)}</b> (round {b.round})
       {error && <div style={{ color: '#ff9' }}>⚠ {error}</div>}
+      {fightToDeath && (
+        <div style={{ fontSize: 13, opacity: 0.85 }}>
+          Amphibious assault — a fight to the death, no retreat for either side.
+        </div>
+      )}
       {!myDecision && <div>Waiting for the other side…</div>}
       {myDecision && ph && (
         <div>
@@ -939,8 +961,12 @@ function BattlePanel({
       )}
       {myDecision && !ph && (
         <div>
+          <div style={{ color: POWER_COLOR[you], fontWeight: 600 }}>
+            {POWER_NAME[you]} — {b.stage === 'retreatDecision' ? 'fight on or retreat?' : 'your decision'}
+          </div>
           {legal.map((a, i) => (
-            <button key={i} style={a.kind === 'continueBattle' ? primary : btn} disabled={busy} onClick={() => act(a)}>
+            <button key={i} style={{ ...(a.kind === 'continueBattle' ? primary : btn), opacity: armed ? 1 : 0.5 }}
+              disabled={busy || !armed} onClick={() => act(a)}>
               {labelBattleAction(a, b.territory)}
             </button>
           ))}

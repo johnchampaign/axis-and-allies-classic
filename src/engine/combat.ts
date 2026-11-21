@@ -460,6 +460,19 @@ function beginRetreatDecision(state: GameState): void {
   // no retreat destination exists AND there is a piece that would have to fall back.
   const stuck = retreatZones(state).length === 0 && !airOnlyAttack(state);
   if ((b.amphibious && !def(b.territory).water) || stuck) {
+    // Say WHY nobody was asked. A battle that rolls straight into round 2 with no
+    // "fight on or retreat?" reads as the game deciding for you (live report
+    // scyqv5vuez2gou0h item 23: "the game decides to continue attacking without
+    // asking me"). Once per battle is enough — the reason does not change.
+    if (b.round === 1) {
+      const amphib = b.amphibious && !def(b.territory).water;
+      log(state, amphib
+        ? 'No retreat — an amphibious assault is a fight to the death (FAQ p. 1).'
+        : 'No retreat possible — no adjacent friendly space the attackers came from (p. 18).', {
+        kind: 'combat.noRetreat', side: b.attacker,
+        payload: { territory: b.territory, reason: amphib ? 'amphibious' : 'noRetreatSpace' },
+      });
+    }
     runRound(state);
     return;
   }
@@ -590,6 +603,11 @@ export function applyContinueBattle(state: GameState, actor: Power): EngineResul
   const b = state.battle;
   if (!b || b.stage !== 'retreatDecision') return no('no retreat decision pending');
   if (actor !== b.attacker) return no('only the attacker decides');
+  // Record the choice: without it a battle the player pressed and one the rules
+  // forced (see beginRetreatDecision) look identical in the log.
+  log(state, `${actor} presses the attack.`, {
+    kind: 'combat.continue', side: actor, payload: { territory: b.territory, round: b.round },
+  });
   runRound(state);
   return ok;
 }

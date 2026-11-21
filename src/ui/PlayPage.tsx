@@ -441,7 +441,7 @@ function Header({
           {POWER_NAME[p]} {view.ipcs[p]}
         </span>
       ))}
-      <span style={{ padding: '4px 8px', borderRadius: 6, background: '#d9a520', color: '#111' }}>
+      <span style={{ padding: '4px 8px', borderRadius: 6, background: '#e8e4d8', color: '#111' }}>
         <b>Round {view.round + 1}</b> · {view.phase}
       </span>
       <span title="Axis win on economics if Germany + Japan's combined income is 84 or more at the end of a round"

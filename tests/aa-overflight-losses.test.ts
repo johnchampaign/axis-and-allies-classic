@@ -120,3 +120,48 @@ describe('overflight AA casualties', () => {
     expect(aa[0].payload).toMatchObject({ territory: 'karelia-ssr', hits: 1, planes: 1 });
   });
 });
+
+// Live report scyqv5vuez2gou0h item 25: planes attacking ONE territory from two
+// airfields were fired on as two separate volleys (one per move action), so the
+// attacker could not give up a fighter to save the bomber. The target's gun now
+// fires once, in the battle, at the whole force (spec §6.2 step 2, §13.11).
+describe('AA at the target of an attack fires once, in the battle', () => {
+  function targetSetup(): GameState {
+    const s = at('combatMove', 'germany');
+    clear(s, 'karelia-ssr');
+    addUnit(s, 'karelia-ssr', 'aaGun', 'russia');
+    addUnit(s, 'karelia-ssr', 'infantry', 'russia');
+    return s;
+  }
+  const aaLines = (s: GameState) =>
+    s.log.filter((e) => (e as { kind?: string }).kind === 'combat.aa');
+
+  it('does not fire while the planes are still arriving', () => {
+    let s = targetSetup();
+    const bomber = addUnit(s, 'east-europe', 'bomber', 'germany');
+    const fighter = addUnit(s, 'finland-norway', 'fighter', 'germany');
+    s.rng = RNG_HIT_THEN_MISS;
+    s = apply(s, { kind: 'move', unitIds: [bomber.id], path: ['east-europe', 'karelia-ssr'] }, 'germany');
+    s = apply(s, { kind: 'move', unitIds: [fighter.id], path: ['finland-norway', 'karelia-ssr'] }, 'germany');
+    expect(aaLines(s)).toHaveLength(0);
+    expect(s.territories['karelia-ssr'].units.filter((u) => u.owner === 'germany')).toHaveLength(2);
+  });
+
+  it('shoots at both in round 1 and takes the fighter, not the bomber', () => {
+    let s = targetSetup();
+    const bomber = addUnit(s, 'east-europe', 'bomber', 'germany');
+    const fighter = addUnit(s, 'finland-norway', 'fighter', 'germany');
+    s = apply(s, { kind: 'move', unitIds: [bomber.id], path: ['east-europe', 'karelia-ssr'] }, 'germany');
+    s = apply(s, { kind: 'move', unitIds: [fighter.id], path: ['finland-norway', 'karelia-ssr'] }, 'germany');
+    s = apply(s, { kind: 'endPhase' }, 'germany');
+    s.rng = RNG_HIT_THEN_MISS; // two AA dice: 1 then 4 — exactly one plane downed
+    s = apply(s, { kind: 'startBattle', territory: 'karelia-ssr' }, 'germany');
+    const aa = aaLines(s);
+    expect(aa).toHaveLength(1);
+    expect((aa[0] as { payload: { hits: number } }).payload.hits).toBe(1);
+    const mine = s.territories['karelia-ssr'].units.filter((u) => u.owner === 'germany').map((u) => u.type);
+    expect(mine).not.toContain('fighter');
+    // the bomber survived the gun (it may still fall to the infantry's return fire)
+    expect(casualties(s)[0].msg).toContain('germany loses 1 fighter');
+  });
+});

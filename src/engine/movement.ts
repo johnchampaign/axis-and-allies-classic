@@ -378,10 +378,27 @@ function moveAir(
   // has not already shot at this turn (spec §4.4). Tracking per-plane (not a single
   // per-territory flag) means planes flown in over several move actions are each fired
   // at, instead of only the first batch. (live report: 4 bombers attacked, AA fired at 2)
+  //
+  // The TARGET of an attack is the exception: its gun fires in the battle (or raid)
+  // itself, once, at every attacking plane together (spec §6.2 step 2, §7 step 2),
+  // so the attacker loses "the plane of his or her choice" from the whole force
+  // (rulebook p. 18, spec §13.11). Firing here instead split one attack into one
+  // volley per move action, each with its own victim: planes arriving from two
+  // airfields could not trade a fighter for a bomber. (Live report scyqv5vuez2gou0h
+  // item 25: USA hit Manchuria with 2 fighters + 1 bomber from different
+  // territories, the bomber's volley rolled the 1, and the bomber was lost.)
+  // Deferred only when a battle or raid is certain — enemy combat units are there
+  // now and cannot leave, or the bombers are flagged for SBR — so a gun never
+  // goes unfired; runRound/resolveSBR shoot at every plane not yet in aaFiredAt.
+  const targetFiresInBattle = phase === 'combatMove' && !def(dest).water && (
+    !!a.sbr || destTs.units.some(
+      (x) => isEnemy(x.owner, actor) && x.type !== 'factory' && x.type !== 'aaGun',
+    ));
   const survivors = new Set(units);
   for (const t of a.path.slice(1)) {
     const ts = terr(state, t);
     if (def(t).water) continue;
+    if (t === dest && targetFiresInBattle) continue;
     const aa = ts.units.find((x) => x.type === 'aaGun' && isEnemy(x.owner, actor));
     if (!aa) continue;
     const fired = (ts.aaFiredAt ??= []);
