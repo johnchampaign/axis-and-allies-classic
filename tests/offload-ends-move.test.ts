@@ -12,7 +12,7 @@
 // Algeria, taking two territories off one boat in one turn.
 import { describe, expect, it } from 'vitest';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
-import { def } from '../src/engine/data';
+import { def, UNITS } from '../src/engine/data';
 import { createGame, beginTurnSnapshot } from '../src/engine/setup';
 import type { GameState, Power, Unit, UnitType } from '../src/engine/types';
 
@@ -98,5 +98,53 @@ describe('landing ends the passenger\'s move (spec §5.2)', () => {
     const r = A.tryApplyAction!(s, { kind: 'move', unitIds: [inf.id], path: ['french-west-africa', 'algeria'] }, 'uk');
     expect(r.ok, r.reason).toBe(true);
     expect(r.state.territories['algeria'].owner).toBe('uk');
+  });
+});
+
+// The same rule seen from the BOAT's side. An amphibious unload resolves during
+// the combat phase, where applyOffload exhausts the transport (movesUsed = 2,
+// unloaded = true) but deliberately leaves movedPhase clean — it is only set
+// when the phase is combatMove/noncombat. legal.ts filtered sea units on
+// movedPhase alone, so in the following noncombat the boat looked unmoved and
+// was offered another hop, which moveSea then refused ("ships move at most 2").
+// legalActions must be a SUBSET of what the engine accepts (adapter contract);
+// handing out an action tryApplyAction rejects is a contract break. Caught by
+// soak seed 1049: UK transport 155, north-sea-zone -> east-canada-sea-zone.
+describe('an unloaded transport is done for the turn (legalActions subset)', () => {
+  /** The post-amphibious state the engine itself produces: emptied, exhausted,
+   *  and — because the unload happened in the combat phase — no movedPhase. */
+  function beached(): { s: GameState; tr: Unit } {
+    const s = at('noncombat', 'uk');
+    const sea = 'north-sea-zone';
+    s.territories[sea].units = [];
+    const tr = addUnit(s, sea, 'transport', 'uk', {
+      movesUsed: UNITS.transport.move, unloaded: true,
+    });
+    expect(tr.movedPhase).toBeUndefined();
+    return { s, tr };
+  }
+
+  it('the engine refuses it another hop', () => {
+    const { s, tr } = beached();
+    const r = A.tryApplyAction!(s,
+      { kind: 'move', unitIds: [tr.id], path: ['north-sea-zone', 'east-canada-sea-zone'] }, 'uk');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/at most/);
+  });
+
+  it('so legalActions must not offer it one', () => {
+    const { s, tr } = beached();
+    const offered = A.legalActions(s, 'uk')
+      .filter((a) => a.kind === 'move' && a.unitIds.includes(tr.id));
+    expect(offered, 'legalActions offered a move for a transport that already unloaded').toEqual([]);
+  });
+
+  it('and nothing else it offers here is refused either', () => {
+    const { s } = beached();
+    const refused = A.legalActions(s, 'uk')
+      .map((a) => ({ a, r: A.tryApplyAction!(s, a, 'uk') }))
+      .filter((x) => !x.r.ok)
+      .map((x) => `${JSON.stringify(x.a)} -> ${x.r.reason}`);
+    expect(refused).toEqual([]);
   });
 });

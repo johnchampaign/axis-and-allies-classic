@@ -303,7 +303,19 @@ function noncombatActions(state: GameState, actor: Power): Action[] {
           out.push({ kind: 'move', unitIds: [u.id], path: [t, n] });
           added++;
         }
-      } else if (d.domain === 'sea' && !u.movedPhase) {
+      } else if (d.domain === 'sea' && !u.movedPhase && u.movesUsed < UNITS[u.type].move) {
+        // movedPhase alone is NOT the engine's test. An amphibious unload resolves
+        // during the COMBAT phase, and applyOffload deliberately leaves movedPhase
+        // clean there (it is only set when state.phase is combatMove/noncombat)
+        // while still exhausting the boat: movesUsed = 2, unloaded = true. So a
+        // transport that put troops ashore arrives in noncombat looking unmoved,
+        // and we offered it another hop that moveSea then refused with "ships move
+        // at most 2" — legalActions handing out an action tryApplyAction rejects,
+        // which breaks the adapter contract (legalActions is a SUBSET of legal).
+        // Live games survived it only because controller.ts validates every pick
+        // before using it; the soak asserts the contract directly, which is how
+        // this surfaced — seed 1049, UK transport 155, North Sea -> East Canada
+        // Sea Zone. Mirror the engine's own arithmetic instead of a proxy for it.
         let added = 0;
         for (const n of def(t).connections) {
           if (added >= 2) break;
