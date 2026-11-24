@@ -4,9 +4,10 @@
 // a row and pushes the next target further back.
 import { describe, expect, it } from 'vitest';
 import { axisAndAlliesAdapter as A } from '../src/engine/adapter';
+import { log } from '../src/engine/helpers';
 import { beginTurnSnapshot, createGame } from '../src/engine/setup';
 import type { GameState, Power } from '../src/engine/types';
-import { canUndoAfter, findUndo } from '../functions/api/games/[id]/undo';
+import { canUndoAfter, chainIn, findUndo, labelOf } from '../functions/api/games/[id]/undo';
 
 type Row = { turn: number; state: string };
 const enc = (s: GameState) => `v1:${JSON.stringify(s)}`;
@@ -73,5 +74,47 @@ describe('undo window', () => {
   it('only the seat on the clock can undo', async () => {
     const t = table(dicefreeActions(2));
     expect(await findUndo(t.load, 'japan')).toBeNull();
+  });
+
+  // "Undo several" (live report 8fu1v2uy6urs9mlp): the list of actions that can
+  // be taken back, and jumping back N of them at once.
+  const noted = (n: number): GameState[] => dicefreeActions(n).map((s, k) => {
+    for (let i = 1; i <= k; i++) log(s, `move ${i}`);
+    return s;
+  });
+  const asc = (t: { rows: Row[] }) => [...t.rows].sort((a, b) => a.turn - b.turn);
+
+  it('lists every action that can be taken back, newest first', () => {
+    const chain = chainIn(asc(table(noted(4))), 'germany');
+    expect(chain.map((c) => c.label)).toEqual(['move 4', 'move 3', 'move 2', 'move 1']);
+    expect(chain.map((c) => seqOf(c.targetState))).toEqual([3, 2, 1, 0]);
+  });
+
+  it('the list stops at a dice roll', () => {
+    const states = noted(4);
+    for (const s of states.slice(2)) s.rng = (s.rng ?? 0) + 1; // action 2 rolled
+    const chain = chainIn(asc(table(states)), 'germany');
+    expect(chain.map((c) => seqOf(c.targetState))).toEqual([3, 2]);
+  });
+
+  it('jumping back several gives the same position as undoing one at a time', () => {
+    const one = table(noted(5));
+    for (let i = 0; i < 3; i++) one.append((chainIn(asc(one), 'germany')[0]).targetState);
+    const many = table(noted(5));
+    const jump = chainIn(asc(many), 'germany')[2];
+    many.append(jump.targetState);
+    expect(many.rows.at(-1)!.state).toBe(one.rows.at(-1)!.state);
+    // and the list still works after the re-appended rows
+    expect(chainIn(asc(many), 'germany').map((c) => seqOf(c.targetState))).toEqual([1, 0]);
+    expect(chainIn(asc(one), 'germany').map((c) => seqOf(c.targetState))).toEqual([1, 0]);
+  });
+
+  it('labels an action even once the log is at its cap', () => {
+    const [a] = dicefreeActions(0);
+    for (let i = 0; i < 5; i++) log(a, `old ${i}`);
+    const b = structuredClone(a);
+    log(b, 'new line');
+    b.log.shift(); // capped: same length as before
+    expect(labelOf(a, b)).toBe('new line');
   });
 });

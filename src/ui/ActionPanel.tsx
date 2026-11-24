@@ -113,7 +113,7 @@ const POWER_SIDE: Record<Power, 'axis' | 'allies'> = {
 };
 
 export function ActionPanel({
-  view, you, yourTurn, legal, submit, selected, selectedUnits, clearSelection, canUndo, onUndo,
+  view, you, yourTurn, legal, submit, selected, selectedUnits, clearSelection, canUndo, onUndo, listUndo,
 }: {
   view: GameState;
   you: Power;
@@ -124,10 +124,15 @@ export function ActionPanel({
   selectedUnits: number[];
   clearSelection: () => void;
   canUndo: boolean;
-  onUndo: () => Promise<void>;
+  onUndo: (steps?: number) => Promise<void>;
+  listUndo: () => Promise<string[]>;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The "undo several" list (null = closed). It describes one exact position,
+  // so any change to the position closes it rather than leave stale rows.
+  const [undoList, setUndoList] = useState<string[] | null>(null);
+  useEffect(() => { setUndoList(null); }, [view.seq, view.phase, view.current]);
   const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
   const [confirmUnplaced, setConfirmUnplaced] = useState<{ type: string; count: number }[] | null>(null);
   const [confirmSurrender, setConfirmSurrender] = useState(false);
@@ -183,14 +188,50 @@ export function ActionPanel({
         </div>
       )}
       {canUndo && (
-        <button
-          style={{ ...btn, marginBottom: 6 }}
-          disabled={busy}
-          title="Take back your last action. Available until you roll dice (combat, tech, rockets) or end your turn."
-          onClick={async () => { setBusy(true); try { await onUndo(); } finally { setBusy(false); } }}
-        >
-          ↶ Undo last action
-        </button>
+        <div style={{ marginBottom: 6 }}>
+          <button
+            style={btn}
+            disabled={busy}
+            title="Take back your last action. Available until you roll dice (combat, tech, rockets) or end your turn."
+            onClick={async () => { setBusy(true); try { await onUndo(); setUndoList(null); } finally { setBusy(false); } }}
+          >
+            ↶ Undo last action
+          </button>{' '}
+          <button
+            style={btn}
+            disabled={busy}
+            title="See your recent actions and go back several at once."
+            onClick={async () => {
+              if (undoList) { setUndoList(null); return; }
+              setBusy(true);
+              try { setUndoList(await listUndo()); } catch { setUndoList(null); } finally { setBusy(false); }
+            }}
+          >
+            {undoList ? 'Hide list' : 'Undo several…'}
+          </button>
+          {undoList && (
+            <div style={{ ...box, marginTop: 6 }}>
+              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4 }}>
+                Your actions, newest first. Pick one to take it back along with everything after it.
+              </div>
+              {undoList.length === 0 && <div style={{ fontSize: 12 }}>Nothing to take back.</div>}
+              {undoList.map((label, i) => (
+                <button
+                  key={i}
+                  style={{ ...btn, display: 'block', width: '100%', textAlign: 'left', marginBottom: 3, fontSize: 12 }}
+                  disabled={busy}
+                  title={`Take back ${i + 1} action${i ? 's' : ''}`}
+                  onClick={async () => {
+                    setBusy(true);
+                    try { await onUndo(i + 1); setUndoList(null); } finally { setBusy(false); }
+                  }}
+                >
+                  ↶ {i + 1}. {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       {view.phase === 'tech' && <TechPanel view={view} you={you} act={act} />}
       {view.phase === 'purchase' && <PurchasePanel view={view} you={you} act={act} />}

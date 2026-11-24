@@ -93,9 +93,9 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
     setSelected(tid === selected ? null : tid);
     setSelectedUnits([]);
   };
-  const onUndo = async () => {
+  const onUndo = async (steps = 1) => {
     try {
-      const { canUndo: more } = await client.undo();
+      const { canUndo: more } = await client.undo(steps);
       setCanUndo(more);
       await game.refresh();
       setSelected(null);
@@ -207,6 +207,7 @@ export function PlayPage({ gameId, token: initialToken }: { gameId: string; toke
           clearSelection={() => { setSelectedUnits([]); }}
           canUndo={canUndo}
           onUndo={onUndo}
+          listUndo={client.listUndo}
         />
         <ReportsWidget reportBug={game.reportBug} />
         <div style={{ marginTop: 10 }}>

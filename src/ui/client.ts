@@ -27,7 +27,10 @@ const WRITE_MS = 60_000;
 export type AaClient = GameClientApi<GameState, Action> & {
   /** Revert the last deterministic action; resolves with the refreshed view and
    *  whether a further undo is still available. */
-  undo: () => Promise<{ view: GameState; canUndo: boolean }>;
+  undo: (steps?: number) => Promise<{ view: GameState; canUndo: boolean }>;
+  /** What each undoable action did, newest first — undoing `i + 1` steps takes
+   *  the turn back to just before entry `i`. */
+  listUndo: () => Promise<string[]>;
   /** Peek whether an undo is currently available (to enable the button). */
   peekUndo: () => Promise<boolean>;
 };
@@ -101,8 +104,13 @@ export function makeClient(
       }).then((r) => j<{ reportId: string }>(r)),
       WRITE_MS, 'Sending your report',
     ),
-    undo: () => withDeadline(
-      (signal) => fetch(`${base}/undo${q}`, { method: 'POST', signal })
+    listUndo: () => withDeadline(
+      (signal) => fetch(`${base}/undo${q}&list=1`, { signal })
+        .then((r) => j<{ steps: string[] }>(r)).then((d) => d.steps ?? []),
+      READ_MS, 'Listing your actions',
+    ),
+    undo: (steps = 1) => withDeadline(
+      (signal) => fetch(`${base}/undo${q}${steps > 1 ? `&steps=${steps}` : ''}`, { method: 'POST', signal })
         .then((r) => j<View & { canUndo: boolean }>(r))
         .then((d) => ({ view: d.view, canUndo: d.canUndo })),
       WRITE_MS, 'Undoing your move',
