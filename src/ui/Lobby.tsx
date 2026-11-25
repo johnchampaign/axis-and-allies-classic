@@ -59,7 +59,9 @@ export function Lobby() {
   // AI controls every opposing power as a leaderboard opponent (identity
   // ai:axis-and-allies:<key>). Navigates straight to one of the human's seats;
   // PlayPage attaches the signed-in identity so the result counts.
-  // Key is standard@13 as of 2026-11-19 — warships now escort the transports
+  // Key is standard@14 as of 2026-11-25 — the four spare industrial complexes in
+  // the set are now a shared, enforced limit instead of four per power. Before
+  // that, standard@13 — warships now escort the transports
   // that actually need them, not whichever zone they happen to share. Before
   // that, standard@12 — the AI chooses WHICH ocean to
   // fight in. It used to attack the first sea zone the territory file listed
@@ -86,7 +88,7 @@ export function Lobby() {
       const humanPowers = TURN_ORDER.filter((p) => SIDE_OF[p] === humanSide);
       const aiPwrs = TURN_ORDER.filter((p) => SIDE_OF[p] !== humanSide);
       const ai: Partial<Record<Power, string>> = {};
-      for (const p of aiPwrs) ai[p] = 'standard@13';
+      for (const p of aiPwrs) ai[p] = 'standard@14';
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

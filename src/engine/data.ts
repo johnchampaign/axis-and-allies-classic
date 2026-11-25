@@ -59,6 +59,13 @@ export function isOriginalComplexOf(territory: string, power: Power): boolean {
   return ORIGINAL_COMPLEX_OWNER[territory] === power;
 }
 
+/** Did this territory hold an industrial complex at setup? Those eight pieces
+ *  begin on the board; a complex standing anywhere else came out of the box, and
+ *  the box holds only four spares. See NEW_COMPLEX_LIMIT in helpers.ts. */
+export function isOriginalComplexSite(territory: string): boolean {
+  return territory in ORIGINAL_COMPLEX_OWNER;
+}
+
 /** Is this complex under the per-turn production limit (spec §9.3)? Checks the
  *  setup data as well as the flag, so games saved while a power's own recaptured
  *  complex was wrongly flagged limited play correctly without a migration. */

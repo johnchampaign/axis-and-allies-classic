@@ -2,7 +2,8 @@
 import { complexIsLimited, def, isOriginalComplexOf, UNITS } from './data';
 import {
   capitalHeldByEnemy, fighterOverflow, isEnemy, isEnemyOccupied, isFriendlySpace,
-  log, productionLevel, rollDice, terr,
+  log, NEW_COMPLEX_LIMIT, newComplexesInPlay, newComplexSlotsLeft, productionLevel,
+  rollDice, terr,
 } from './helpers';
 import { beginTurnSnapshot } from './setup';
 import {
@@ -166,6 +167,16 @@ export function applyPurchase(
     for (let i = 0; i < n; i++) items.push({ type: t });
   }
   if (total > state.ipcs[actor]) return no('cannot afford that order');
+  // The four spare complexes are shared by all five powers (see NEW_COMPLEX_LIMIT).
+  // Refuse here as well as at placement so the order does not quietly swallow 15
+  // IPCs for a piece there is no room to put down.
+  const wantedComplexes = items.filter((x) => x.type === 'factory').length;
+  if (wantedComplexes > newComplexSlotsLeft(state)) {
+    const left = newComplexSlotsLeft(state);
+    return no(left === 0
+      ? 'all four new industrial complexes are already in play (FAQ p. 1)'
+      : `only ${left} new industrial complex${left === 1 ? '' : 'es'} left in the set (FAQ p. 1)`);
+  }
   state.ipcs[actor] -= total;
   state.purchases.push(...items);
   // Name the units bought, not just a count — on a real board everyone can see
@@ -266,6 +277,11 @@ function placeOne(
       return no('place complexes in territories owned since the start of your turn');
     }
     if (ts.units.some((u) => u.type === 'factory')) return no('one complex per territory');
+    // Belt and braces behind the purchase-phase check: a game saved before the cap
+    // existed can already be over it, and nothing should put a fifth spare down.
+    if (newComplexesInPlay(state) >= NEW_COMPLEX_LIMIT) {
+      return no('all four new industrial complexes are already in play (FAQ p. 1)');
+    }
     placeUnit(state, actor, a.type, a.territory, { factoryLimited: true });
     state.purchases.splice(i, 1);
     return ok;

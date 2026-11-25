@@ -1,6 +1,6 @@
 // Pure query helpers over GameState. No mutation here except rollDice (rng cursor).
 import { Rng, appendGameLog } from 'digital-boardgame-framework';
-import { CANAL_EDGES, def, TERRITORIES, UNITS } from './data';
+import { CANAL_EDGES, def, isOriginalComplexSite, TERRITORIES, UNITS } from './data';
 import {
   CAPITAL_OF, SIDE_OF, type GameState, type Power, type Side, type TerritoryState, type Unit,
 } from './types';
@@ -65,6 +65,45 @@ export function adjacent(a: string, b: string): boolean {
 export function capitalHeldByEnemy(state: GameState, p: Power): boolean {
   const cap = terr(state, CAPITAL_OF[p]);
   return cap.owner !== null && isEnemy(cap.owner, p);
+}
+
+/** New industrial complexes allowed in a game, by ALL FIVE POWERS TOGETHER.
+ *  Eight of the set's twelve complexes are on the board at setup, and the four
+ *  spares are a rule and not merely a component shortage: "After everything is set
+ *  up at the game's start, there are only four additional industrial complexes left
+ *  over. Can more than that be built? No. Once four new industrial complexes are
+ *  brought into play, no more can be built" (FAQ p. 1 — the same page we take the
+ *  amphibious no-retreat ruling from). First come, first served: a power that wants
+ *  two has to outspend the others for them.
+ *
+ *  The engine had no cap at all, and the AI carried its own as four EACH
+ *  (myFactoryCount < 4), so five powers could put twenty extra complexes on a board
+ *  that has room for four. That is what live report 43ybach57afjh7ff item 29 saw:
+ *  "The AI built far too many factories too." */
+export const NEW_COMPLEX_LIMIT = 4;
+
+/** How many of the four spares are on the board. Counted from the board rather
+ *  than a saved tally, which costs nothing and buys two things: games saved before
+ *  this cap existed are judged correctly with no migration, and capturing a
+ *  complex cannot miscount — complexes are never destroyed and a territory holds
+ *  at most one (p. 14), so "a complex where setup had none" is exactly one piece
+ *  out of the box, whoever currently owns it. Taking an ORIGINAL complex spends no
+ *  slot: that piece was already in play. */
+export function newComplexesInPlay(state: GameState): number {
+  let n = 0;
+  for (const [t, ts] of Object.entries(state.territories)) {
+    if (isOriginalComplexSite(t)) continue;
+    if (ts.units.some((u) => u.type === 'factory')) n++;
+  }
+  return n;
+}
+
+/** Spare complexes still in the box, counting any this power has bought and not
+ *  yet placed — so the purchase phase refuses the second one instead of taking 15
+ *  IPCs for a piece that cannot be put down. */
+export function newComplexSlotsLeft(state: GameState): number {
+  const pending = state.purchases.filter((x) => x.type === 'factory').length;
+  return Math.max(0, NEW_COMPLEX_LIMIT - newComplexesInPlay(state) - pending);
 }
 
 /** National production level: sum of income values of controlled territories (spec §11.1). */

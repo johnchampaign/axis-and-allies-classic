@@ -397,8 +397,18 @@ function afterCasualties(state: GameState): void {
     let val = UNITS[u.type].defense;
     if (u.type === 'fighter' && state.techs[u.owner].includes('jetPower')) val = 5;
     if (val <= 0) continue;
-    const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
-    const faces = rollDice(state, dice);
+    // Heavy Bombers is an ATTACK technology only: "Heavy Bomber development
+    // allows each bomber to attack with three dice instead of one die, either in
+    // a regular combat situation or in a strategic bombing raid ...; each heavy
+    // bomber continues to defend with one die" (3e p.3 item 04). Jet Power is the
+    // defensive counterpart and it raises the fighter's NUMBER, never its dice
+    // count. This loop used to hand a defending bomber the attacker's three dice,
+    // which took a bomber caught on the ground from ~17% to ~42% to score a hit —
+    // the tech's own description promises the bonus "in battle", and defending is
+    // a battle, so the bug read as plausible. Live report 43ybach57afjh7ff item 28
+    // ("heavy bombers are far too strong") is about the attack side, but this is
+    // the half of it that was actually ours.
+    const faces = rollDice(state, 1);
     defFaces.push(...faces);
     const hits = faces.filter((r) => r <= val).length;
     if (u.type === 'submarine') subHits += hits;

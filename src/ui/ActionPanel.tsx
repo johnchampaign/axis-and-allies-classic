@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import territoriesJson from '../../data/territories.json';
 import unitsJson from '../../data/units.json';
+import { newComplexSlotsLeft } from '../engine/helpers';
 import { SIDE_OF, TECH_BY_ROLL, type Action, type GameState, type Power, type Tech, type Unit, type UnitType } from '../engine/types';
 import { POWER_COLOR, POWER_NAME, UNIT_NAME } from './theme';
 
@@ -15,7 +16,7 @@ const TECH_INFO: Record<Tech, { label: string; desc: string }> = {
   superSubs: { label: 'Super Submarines', desc: 'Your submarines hit on a 3 or less when attacking (instead of 2).' },
   longRangeAircraft: { label: 'Long-Range Aircraft', desc: 'Your fighters move 6 and bombers move 8 (instead of 4 and 6).' },
   industrialTechnology: { label: 'Industrial Technology', desc: 'Every unit you build costs 1 IPC less.' },
-  heavyBombers: { label: 'Heavy Bombers', desc: 'Your bombers roll 3 dice instead of 1 — both in battle and in strategic bombing raids.' },
+  heavyBombers: { label: 'Heavy Bombers', desc: 'Your bombers ATTACK with 3 dice instead of 1 — in battle and in strategic bombing raids. They still defend with one die.' },
 };
 
 const TERR: Record<string, { id: string; name: string; water: boolean; ipc: number; connections: string[] }> =
@@ -383,6 +384,13 @@ function PurchasePanel({ view, you, act }: { view: GameState; you: Power; act: (
   const cost = (t: UnitType) => UNITS[t].cost - discount;
   const total = (Object.entries(order) as [UnitType, number][]).reduce((s, [t, n]) => s + cost(t) * n, 0);
   const cash = view.ipcs[you];
+  // The set's four spare industrial complexes are shared by all five powers, so
+  // "how many are left" is a real question a player cannot answer from the board
+  // without counting it piece by piece. Live report 43ybach57afjh7ff item 29 asked
+  // for exactly this ("I guess you'd need to display how many are still available
+  // to buy"). Every other unit type is unlimited, so only this row gets a ceiling.
+  const complexesLeft = newComplexSlotsLeft(view);
+  const ceiling = (t: UnitType) => (t === 'factory' ? complexesLeft : Infinity);
   return (
     <div style={box}>
       <b>Purchase units</b> — {cash} IPCs, spending {total}.
@@ -390,17 +398,23 @@ function PurchasePanel({ view, you, act }: { view: GameState; you: Power; act: (
         <tbody>
           {BUYABLE.map((t) => (
             <tr key={t}>
-              <td>{UNIT_NAME[t]}</td>
+              <td>{UNIT_NAME[t]}{t === 'factory' && ` (${complexesLeft} left in the set)`}</td>
               <td>{cost(t)}</td>
               <td>
                 <button style={btn} onClick={() => setOrder((o) => ({ ...o, [t]: Math.max(0, (o[t] ?? 0) - 1) }))}>−</button>
                 {order[t] ?? 0}
-                <button style={btn} onClick={() => setOrder((o) => ({ ...o, [t]: (o[t] ?? 0) + 1 }))}>+</button>
+                <button style={btn} disabled={(order[t] ?? 0) >= ceiling(t)}
+                  onClick={() => setOrder((o) => ({ ...o, [t]: Math.min(ceiling(t), (o[t] ?? 0) + 1) }))}>+</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {complexesLeft === 0 && (
+        <div style={{ fontSize: 12, opacity: 0.8 }}>
+          All four spare industrial complexes are on the board — no more can be built by anyone (FAQ p. 1).
+        </div>
+      )}
       <button style={primary} disabled={total > cash}
         onClick={() => act({ kind: 'purchase', order })}>
         Buy ({total} IPCs) &amp; continue ▸
@@ -698,6 +712,14 @@ function MovePanel({
   );
   const boatHere = !!selected && TERR[selected].water &&
     view.territories[selected].units.some(roomyTransport);
+  // Adjacent coasts where unloading would start a battle: enemy-owned AND
+  // defended. An undefended enemy coast is just a walk-in capture, so warning
+  // about it would be noise.
+  const beachheads = selected && TERR[selected].water
+    ? TERR[selected].connections.filter((n) => !TERR[n].water
+        && (view.territories[n]?.units ?? []).some((u) => POWER_SIDE[u.owner] !== POWER_SIDE[you]
+          && u.type !== 'factory' && u.type !== 'aaGun'))
+    : [];
 
   return (
     <div style={box}>
@@ -815,6 +837,17 @@ function MovePanel({
               are, tick them below the map, and press “Load”. Then come back here to
               sail the transport and unload. Each transport carries 2 infantry, OR
               1 tank, OR 1 AA gun.
+            </div>
+          )}
+          {phase === 'combatMove' && beachheads.length > 0 && (
+            // Warn BEFORE the troops are committed, not once the battle has
+            // started. The battle panel already explains the rule, but by then the
+            // decision is made — live report 43ybach57afjh7ff item 27 argued the
+            // rule itself, having met it from the wrong side of the beach.
+            <div style={{ fontSize: 12, marginBottom: 6, color: '#fd8' }}>
+              ⚠ Landing on {beachheads.map(tname).join(' or ')} starts an amphibious
+              assault: once ashore, nothing on either side may retreat — not the
+              troops, not the tanks, not your supporting aircraft (FAQ p. 1).
             </div>
           )}
           {transports.length > 1 && (

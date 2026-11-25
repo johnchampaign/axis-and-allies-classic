@@ -5,7 +5,7 @@ import { airOnlyAttack, battleActor, defenderSubZones, retreatZones } from './co
 import { complexIsLimited, def, UNITS } from './data';
 import {
   airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy,
-  isEnemyOccupied, isFriendlySpace, terr,
+  isEnemyOccupied, isFriendlySpace, NEW_COMPLEX_LIMIT, newComplexesInPlay, terr,
 } from './helpers';
 import { bfsDistance, pendingBattleSpaces, unitCost } from './turn';
 import type { Action, GameState, Power, Unit, UnitType } from './types';
@@ -335,6 +335,10 @@ function mobilizeActions(state: GameState, actor: Power): Action[] {
   for (const type of types) {
     const domain = UNITS[type].domain;
     if (type === 'factory') {
+      // The set's four spares may all be on the board already — a pre-cap save can
+      // even be past four. Offering a site the engine then refuses would break the
+      // adapter contract (legalActions is a SUBSET of legal).
+      if (newComplexesInPlay(state) >= NEW_COMPLEX_LIMIT) continue;
       // EVERY territory held since turn start is a legal site (spec §9.2), and
       // there are only a few dozen — no combinatorial blowup to truncate against.
       // This used to stop after the first 3 in list order, which silently hid the

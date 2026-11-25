@@ -107,6 +107,35 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  bare while the same power held spare hulls 20.4% -> 7.9%.
  *                  Over 48 paired games, undecided 8 -> 5, avg round 24.4 ->
  *                  23.4, no arm worse.
+ *    'standard@14' 2026-11-25, it stops building factories it was never entitled
+ *                  to. The four spare industrial complexes in the set are a rule
+ *                  and not just a component shortage ("once four new industrial
+ *                  complexes are brought into play, no more can be built", FAQ
+ *                  p. 1), and the engine was not enforcing it. The AI carried its
+ *                  own ceiling of four PER POWER off a board scan, so the five
+ *                  seats between them could plant twenty on a board with room for
+ *                  four (live report 43ybach57afjh7ff item 29: "The AI built far
+ *                  too many factories too"). The cap is now shared and enforced in
+ *                  the engine, so this is a REDUCTION in what the AI is allowed to
+ *                  spend on, not a tactical change — and forward complexes are
+ *                  known to be propping up this AI's logistics (see
+ *                  goodFactorySite), so the key is bumped because its strength
+ *                  moved, not because it improved. MEASURED, 16 paired games
+ *                  (seeds 9000+17i), baseline 8a713b6 in a worktree:
+ *                      arm        allies axis cap  avgR  end units
+ *                      baseline     10     2   4   25.3    456
+ *                      with cap      6     1   9   26.4    507
+ *                  Caps 9/16 vs 4/16 is Fisher p = 0.149 — NOT settled at this
+ *                  sample size, and per the tournament note a 16-game split is
+ *                  normally unreadable. What makes it worth believing anyway is
+ *                  that it reproduces a mechanism already measured at 48 games
+ *                  when the factory buy was gated on reach (decisive 40 -> 32 ->
+ *                  21) with the same tell: END UNITS RISE while decisiveness
+ *                  falls, i.e. production appears at home and never arrives.
+ *                  Shipped regardless, because this is the rule and not a tuning
+ *                  choice; the forward-production repair is the follow-up, and it
+ *                  belongs in movement rather than the shopping list.
+ *                  Benchmark vs RandomAI unaffected: 20W 0L 0D over 20 games.
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -122,4 +151,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@11': standard,
   'standard@12': standard,
   'standard@13': standard,
+  'standard@14': standard,
 };

@@ -13,7 +13,7 @@
 import { CANALS, def, UNITS } from '../engine/data';
 import {
   airDistances, airRange, canalOpen, capitalHeldByEnemy, hasLandingSpot, isEnemy, isEnemyOccupied,
-  isFriendlySpace, productionLevel, terr,
+  isFriendlySpace, newComplexSlotsLeft, productionLevel, terr,
 } from '../engine/helpers';
 import { battleOpponents } from '../engine/combat';
 import { airPath, legalActions } from '../engine/legal';
@@ -425,14 +425,6 @@ function goodFactorySite(state: GameState, p: Power): boolean {
   return false;
 }
 
-function myFactoryCount(state: GameState, p: Power): number {
-  let n = 0;
-  for (const ts of Object.values(state.territories)) {
-    n += ts.units.filter((u) => u.owner === p && u.type === 'factory' && u.factoryLimited).length;
-  }
-  return n;
-}
-
 function myTransportCount(state: GameState, p: Power): number {
   let n = 0;
   for (const ts of Object.values(state.territories)) {
@@ -643,8 +635,11 @@ function purchase(state: GameState, p: Power): Action {
   }
   // a rich power plants forward complexes instead of ferrying everything from
   // home (the real fix for stockpiled cash — live: USSR banked 263, Japan 60,
-  // both at the fleet cap). Max 4 new complexes, matching the physical set.
-  if (cash >= 30 && myFactoryCount(state, p) < 4 && goodFactorySite(state, p)) {
+  // both at the fleet cap). The set's four spares are shared by all five powers
+  // (NEW_COMPLEX_LIMIT), and the engine refuses the order once they are gone; this
+  // used to count four PER POWER off its own board scan, so the five AI seats
+  // between them could plant twenty.
+  if (cash >= 30 && newComplexSlotsLeft(state) > 0 && goodFactorySite(state, p)) {
     buy('factory', 1);
   }
   // Endgame rocket battery: with rockets developed and the enemy crippled, an AA
