@@ -19,6 +19,15 @@ const TECH_INFO: Record<Tech, { label: string; desc: string }> = {
   heavyBombers: { label: 'Heavy Bombers', desc: 'Your bombers ATTACK with 3 dice instead of 1 — in battle and in strategic bombing raids. They still defend with one die.' },
 };
 
+/** The Heavy Bombers house rule changes what the technology DOES, so the tooltip
+ *  has to follow the game it is being read in rather than the rulebook. */
+function techDesc(t: Tech, view: GameState): string {
+  if (t === 'heavyBombers' && view.heavyBombersBestOfTwo) {
+    return 'House rule in this game: your bombers ATTACK with 2 dice and keep the best one, so they hit far more often but never score more than one hit. In a strategic bombing raid they roll 2 dice and take the higher for damage. They still defend with one die.';
+  }
+  return TECH_INFO[t].desc;
+}
+
 const TERR: Record<string, { id: string; name: string; water: boolean; ipc: number; connections: string[] }> =
   Object.fromEntries(
     (territoriesJson.territories as { id: string; name: string; water: boolean; ipc: number; connections: string[] }[])
@@ -405,7 +414,7 @@ function TechPanel({ view, you, act }: { view: GameState; you: Power; act: (a: A
         {TECH_BY_ROLL.map((t) => {
           const owned = view.techs[you].includes(t);
           return (
-            <div key={t} title={TECH_INFO[t].desc}
+            <div key={t} title={techDesc(t, view)}
               style={{ fontSize: 13, cursor: 'help', opacity: owned ? 1 : 0.8,
                 textDecoration: 'underline dotted', textUnderlineOffset: 3, width: 'fit-content' }}>
               <span style={{ opacity: 0.7 }}>{owned ? '✅' : '•'}</span>{' '}

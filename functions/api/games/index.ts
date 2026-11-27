@@ -21,6 +21,10 @@ interface CreateBody {
    *  at this combined production. Omit or null for the standard game. Rejected
    *  for rated vs-AI games — see the guard in the handler. */
   alliedEconWin?: number | null;
+  /** HOUSE RULE (live reports 43ybach57afjh7ff, vyha1uq5azhz9ay6): a heavy
+   *  bomber rolls two dice and keeps the best instead of three that all hit.
+   *  Omit or false for the standard game. Rejected for rated vs-AI games. */
+  heavyBombersBestOfTwo?: boolean;
 }
 
 // Bounds for the Allied economic-victory house rule. The Allies OPEN on 90 of
@@ -103,10 +107,17 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       alliedEconWin = v;
     }
 
+    // Same reasoning as above: this one changes the combat odds rather than the
+    // win conditions, and the ladder's AI is tuned against the standard ones.
+    const heavyBombersBestOfTwo = body.heavyBombersBestOfTwo === true;
+    if (heavyBombersBestOfTwo && fwAiPowers.length > 0) {
+      return json({ error: 'the heavy bomber house rule is not available in rated games vs the AI' }, 400);
+    }
+
     const result = await server.createGame({
       // state.ai records EVERY AI seat (see resolveAiSeats); framework-driven
       // powers are ALSO marked via meta.identities by createGame below.
-      initialState: createGame(seed, allAiList, { alliedEconWin }),
+      initialState: createGame(seed, allAiList, { alliedEconWin, heavyBombersBestOfTwo }),
       players: TURN_ORDER,
       emails: body.emails,
       ...(fwAiPowers.length ? { ai: fwAi } : {}),

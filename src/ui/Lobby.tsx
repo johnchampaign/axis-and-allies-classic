@@ -14,6 +14,8 @@ export function Lobby() {
   // House rule, off by default (live report banrukm6f4fe129o). Only offered on
   // this path — the rated vs-AI ladder below keeps the standard conditions.
   const [alliedEconWin, setAlliedEconWin] = useState<number | null>(null);
+  // Second house rule, same path and same reasoning (live report vyha1uq5azhz9ay6).
+  const [heavyBombersBestOfTwo, setHeavyBombers] = useState(false);
 
   // Best-effort games-played counter from the shared hub (framework v0.11).
   useEffect(() => {
@@ -37,7 +39,7 @@ export function Lobby() {
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aiPowers, emails: cleaned, alliedEconWin }),
+        body: JSON.stringify({ aiPowers, emails: cleaned, alliedEconWin, heavyBombersBestOfTwo }),
       });
       const data = (await r.json()) as { gameId: string; invites: Record<Power, string>; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
@@ -171,6 +173,24 @@ export function Lobby() {
                 <option value="115">115 IPCs</option>
                 <option value="120">120 IPCs</option>
               </select>
+            </label>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>
+            <legend>House rule: tamer Heavy Bombers (optional)</legend>
+            <p style={{ fontSize: 13, opacity: 0.8, margin: '4px 8px' }}>
+              In the standard game a Heavy Bomber rolls three dice and every one
+              that hits counts, so a single bomber is worth two hits on average —
+              by far the biggest prize on the technology table. Turn this on and a
+              Heavy Bomber rolls two dice and keeps the best one instead: it hits
+              much more often than an ordinary bomber, but never more than once.
+            </p>
+            <label style={{ display: 'block', margin: '4px 10px' }}>
+              <input
+                type="checkbox"
+                checked={heavyBombersBestOfTwo}
+                onChange={(e) => setHeavyBombers(e.target.checked)}
+              />{' '}
+              Heavy Bombers roll two dice and keep the best
             </label>
           </fieldset>
           <fieldset style={{ border: '1px solid #456', borderRadius: 8, marginBottom: 14 }}>

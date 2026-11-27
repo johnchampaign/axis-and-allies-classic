@@ -153,6 +153,19 @@ export interface GameState {
    *  march on the second one. Offered for unranked games only, so standard and
    *  rated play keep the asymmetric conditions the AI is tuned against. */
   alliedEconWin?: number | null;
+  /** HOUSE RULE, off by default. Heavy Bombers in Classic roll three dice and
+   *  EVERY hit counts, which makes one bomber worth two hits on average and is
+   *  the single strongest thing a tech roll can produce. With this on, a heavy
+   *  bomber instead rolls TWO dice and keeps only the best — the rule later
+   *  published for the same technology — so it is much likelier to hit but can
+   *  never score more than one hit in a battle. "Best" flips meaning by context:
+   *  the LOWEST face in combat (a hit is face <= attack value), the HIGHEST in a
+   *  strategic bombing raid (the face IS the damage). Requested twice in live
+   *  reports 43ybach57afjh7ff and vyha1uq5azhz9ay6. Offered for unranked games
+   *  only, so the rated ladder keeps the combat odds the AI is tuned against.
+   *  Optional rather than versioned: a save without it reads as the standard
+   *  game, so no migration is needed. */
+  heavyBombersBestOfTwo?: boolean;
   log: LogEntry[];
   /** Every power played by the AI, however it is driven — the human-vs-AI turn
    *  separator for the game-log upload, the AI turn summary, the opening-book

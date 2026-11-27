@@ -167,8 +167,20 @@ function resolveSBR(state: GameState, t: string, actor: Power): EngineResult {
   }
   const factory = ts.units.find((u) => u.type === 'factory' && isEnemy(u.owner, actor));
   if (bombers.length > 0 && factory) {
-    const dicePer = state.techs[actor].includes('heavyBombers') ? 3 : 1;
-    const dmg = rollDice(state, bombers.length * dicePer).reduce((s, r) => s + r, 0);
+    const heavy = state.techs[actor].includes('heavyBombers');
+    let dmg: number;
+    if (heavy && state.heavyBombersBestOfTwo) {
+      // House rule (state.heavyBombersBestOfTwo): two dice per raider, keep the
+      // BEST. In a raid the face IS the damage, so best means the HIGHEST face —
+      // the mirror of the combat case, where a low face is the good one.
+      dmg = 0;
+      for (const _ of bombers) dmg += Math.max(...rollDice(state, 2));
+    } else {
+      // Standard: three dice per heavy bomber, all summed (3e p.3 item 04). Rolled
+      // in ONE call so the rng cursor is consumed exactly as it always has been.
+      const dicePer = heavy ? 3 : 1;
+      dmg = rollDice(state, bombers.length * dicePer).reduce((s, r) => s + r, 0);
+    }
     const victim = factory.owner;
     const paid = Math.min(dmg, state.ipcs[victim]);
     state.ipcs[victim] -= paid;
@@ -264,18 +276,33 @@ function runRound(state: GameState): void {
 
   // Attacker regular fire (subs already fired; transports & AA roll nothing)
   let atkHits = 0;
+  let bestOfTwoBombers = 0;
   const atkFaces: number[] = [];
   for (const u of attackers(state)) {
     if (u.type === 'submarine' && water) continue;
     const val = UNITS[u.type].attack;
     if (val <= 0) continue;
-    const dice = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers') ? 3 : 1;
+    const heavy = u.type === 'bomber' && state.techs[u.owner].includes('heavyBombers');
+    // Standard Heavy Bombers roll three dice and EVERY hit counts (3e p.3 item
+    // 04). Under the house rule the bomber rolls two and keeps only the best —
+    // here the LOWEST face, since a hit is `face <= attack value` — so it hits far
+    // more often than a plain bomber but can never score two hits at once.
+    const dice = heavy ? (state.heavyBombersBestOfTwo ? 2 : 3) : 1;
     const faces = rollDice(state, dice);
+    const counted = heavy && state.heavyBombersBestOfTwo ? [Math.min(...faces)] : faces;
+    if (heavy && state.heavyBombersBestOfTwo) bestOfTwoBombers++;
+    // Both dice are logged — the player should see the pair it chose from.
     atkFaces.push(...faces);
-    atkHits += faces.filter((r) => r <= val).length;
+    atkHits += counted.filter((r) => r <= val).length;
   }
   if (atkFaces.length > 0) {
-    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkFaces.length} dice [${atkFaces.join(', ')}], ${atkHits} hit(s).`, {
+    // Under the house rule the printed dice can outnumber the hits they were
+    // allowed to score, so say why rather than let it read as a miscount. Message
+    // text only: the payload keeps its shape for the log miners.
+    const note = bestOfTwoBombers > 0
+      ? ` (${bestOfTwoBombers === 1 ? 'a heavy bomber kept its best die' : `${bestOfTwoBombers} heavy bombers each kept their best die`})`
+      : '';
+    log(state, `Round ${b.round}: ${b.attacker} attacks — ${atkFaces.length} dice [${atkFaces.join(', ')}], ${atkHits} hit(s).${note}`, {
       kind: 'combat.roll', side: b.attacker,
       payload: { territory: b.territory, round: b.round, role: 'attack', dice: atkFaces.length, hits: atkHits, rolls: atkFaces },
     });

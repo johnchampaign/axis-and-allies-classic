@@ -4,7 +4,8 @@ import type { GameState, Power, TerritoryState, Unit } from './types';
 import { SIDE_OF, TURN_ORDER } from './types';
 
 export function createGame(
-  seed: number, ai: Power[] = [], opts: { alliedEconWin?: number | null } = {},
+  seed: number, ai: Power[] = [],
+  opts: { alliedEconWin?: number | null; heavyBombersBestOfTwo?: boolean } = {},
 ): GameState {
   const territories: Record<string, TerritoryState> = {};
   const neutrals: string[] = [];
@@ -49,6 +50,7 @@ export function createGame(
     winner: null,
     winReason: null,
     alliedEconWin: opts.alliedEconWin ?? null,
+    heavyBombersBestOfTwo: opts.heavyBombersBestOfTwo ?? false,
     log: [{ seq: 0, turn: 0, phase: 'tech', side: null, kind: 'game.start', msg: 'Game start.' }],
     ai,
   };

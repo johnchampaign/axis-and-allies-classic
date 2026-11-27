@@ -455,6 +455,12 @@ function Header({
           Allied income {alliedIncome(view)}/{view.alliedEconWin}
         </span>
       )}
+      {view.heavyBombersBestOfTwo && (
+        <span title="House rule: a Heavy Bomber rolls two dice and keeps the best one, so it hits often but never scores more than one hit"
+          style={{ padding: '4px 8px', borderRadius: 6, background: '#26323f' }}>
+          Heavy Bombers: best of 2
+        </span>
+      )}
       {Object.keys(wallet).length > 1 && (
         <select value={token} onChange={(e) => setToken(e.target.value)}>
           {Object.entries(wallet).map(([p, t]) => (
