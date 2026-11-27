@@ -109,6 +109,35 @@ function doomedAircraft(view: GameState, you: Power): { tid: string; type: strin
   }
   return out;
 }
+/** Troops still aboard a transport that sits next to a territory this power is
+ * already attacking. Live report u11cw8bhbnits6fz: "I launch an amphibious
+ * assault and forget to unload the transports and my air support is already in
+ * the fight ... are you sure you want to leave all these troops offshore?"
+ * Deliberately narrow so an ordinary ferry run is never nagged: the boat must be
+ * able to unload right now (no enemy ships in its zone — those are fought first
+ * and the landing follows, spec §5.4) and the coast must be an enemy one where
+ * this power's own units have already been committed. */
+function troopsLeftOffshore(view: GameState, you: Power): { zone: string; to: string; count: number }[] {
+  const out: { zone: string; to: string; count: number }[] = [];
+  const enemy = (o: Power) => POWER_SIDE[o] !== POWER_SIDE[you];
+  for (const [zone, ts] of Object.entries(view.territories)) {
+    if (!TERR[zone]?.water) continue;
+    if (ts.units.some((u) => enemy(u.owner))) continue;
+    const count = ts.units
+      .filter((u) => u.owner === you && u.type === 'transport' && !u.unloaded)
+      .reduce((s, u) => s + u.cargo.length, 0);
+    if (count === 0) continue;
+    for (const to of TERR[zone].connections) {
+      if (TERR[to].water) continue;
+      const land = view.territories[to];
+      if (!land || !land.units.some((u) => u.owner === you)) continue;
+      const hostile = (land.owner !== null && enemy(land.owner)) ||
+        land.units.some((u) => enemy(u.owner) && u.type !== 'factory' && u.type !== 'aaGun');
+      if (hostile) { out.push({ zone, to, count }); break; }
+    }
+  }
+  return out;
+}
 const POWER_SIDE: Record<Power, 'axis' | 'allies'> = {
   russia: 'allies', germany: 'axis', uk: 'allies', japan: 'axis', usa: 'allies',
 };
@@ -136,6 +165,7 @@ export function ActionPanel({
   useEffect(() => { setUndoList(null); }, [view.seq, view.phase, view.current]);
   const [confirmCrash, setConfirmCrash] = useState<{ tid: string; type: string; count: number }[] | null>(null);
   const [confirmUnplaced, setConfirmUnplaced] = useState<{ type: string; count: number }[] | null>(null);
+  const [confirmOffshore, setConfirmOffshore] = useState<{ zone: string; to: string; count: number }[] | null>(null);
   const [confirmSurrender, setConfirmSurrender] = useState(false);
 
   // A batch (e.g. "all 19" placements) goes to the server one action at a time,
@@ -262,6 +292,28 @@ export function ActionPanel({
             End phase anyway (lose {confirmCrash.reduce((s, d) => s + d.count, 0)})
           </button>
         </div>
+      ) : confirmOffshore ? (
+        <div style={{ ...box, border: '2px solid #c0392b' }}>
+          <b>⚠ Troops still on their transports!</b>
+          <div style={{ fontSize: 13, margin: '6px 0' }}>
+            You are attacking next to these boats, but the troops aboard have not
+            been landed:
+            <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+              {confirmOffshore.map((d, i) => (
+                <li key={i}>{d.count} unit{d.count === 1 ? '' : 's'} in {tname(d.zone)}, beside {tname(d.to)}</li>
+              ))}
+            </ul>
+            Once the combat move ends they cannot join the attack. To land them,
+            select the sea zone and unload.
+          </div>
+          <button style={primary} disabled={busy} onClick={() => setConfirmOffshore(null)}>
+            Go back and unload
+          </button>
+          <button style={btn} disabled={busy}
+            onClick={() => { setConfirmOffshore(null); act({ kind: 'endPhase' }); }}>
+            End phase anyway (leave them aboard)
+          </button>
+        </div>
       ) : confirmUnplaced ? (
         <div style={{ ...box, border: '2px solid #c0392b' }}>
           <b>⚠ Units will be lost!</b>
@@ -289,6 +341,10 @@ export function ActionPanel({
           if (view.phase === 'noncombat') {
             const doomed = doomedAircraft(view, you);
             if (doomed.length > 0) { setConfirmCrash(doomed); return; }
+          }
+          if (view.phase === 'combatMove') {
+            const offshore = troopsLeftOffshore(view, you);
+            if (offshore.length > 0) { setConfirmOffshore(offshore); return; }
           }
           // Unplaced purchases are forfeited with their IPCs (spec §1.2, engine
           // turn.ts "unplaced purchases are lost"). Live report 82lt2b2dofn9db37,
