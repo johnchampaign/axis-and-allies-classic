@@ -38,13 +38,27 @@
 //   2026-11-20 danger gate 75 -> 70      7/16         7/16        75.4 (max 93)
 //
 // Both 2026-11-20 experiments were REVERTED and the reasons are in heuristic.ts
-// (sparesIn, and the economic-gate note at the top). The re-baseline row is the
-// one to compare against. Note what it says on its own: the gate and the win
-// line now fire in the SAME 7 games, i.e. by the time the Allies notice, it is
-// already over — and the Allies retake lost income 470 times per 16 games while
-// losing south/west Europe, Caucasus, East Europe, Ukraine and India in 16/16.
-// Holding reconquered ground, not noticing sooner and not defending Moscow
-// harder, is where the remaining gap is.
+// (sparesIn, and the economic-gate note at the top).
+//
+// 48-GAME ROWS (`probe-econ-denial.ts 48 strong-axis`, seeds 31337+i). Prefer
+// these: at 16 games nothing here reaches p < 0.05, and two of the reverted
+// experiments above were read off splits that a 48-game pair later contradicted.
+// Opponent UNCHANGED, so these are comparable to the 16-game rows in direction
+// but not in magnitude.
+//                                      econ wins   danger gate   peak income
+//   2026-11-27 baseline (standard@14)  11/48         19/48        72.9 (max 92)
+//   2026-11-27 holdTheIncome garrison   4/48         11/48        68.6 (max 88)
+//
+// SHIPPED as standard@15. Peak income Mann-Whitney p = 0.0066, Moscow fell
+// 20/48 -> 6/48 Fisher p = 0.0024, econ wins p = 0.089. Outcomes allies 22 ->
+// 30, axis 11 -> 4, round-cap 15 -> 14 — the gain lands in the Allied win
+// column, which is what separates it from the 2026-11-20 capital-defence arm.
+// The holding gap this file used to name as the open one is now closed on the
+// LAND approaches only: recaptures did not fall (1594 -> 1638), so the AI still
+// retakes as much as ever, it just keeps more of it. What remains unreachable is
+// the amphibious churn — west-europe is lost in 48/48 and retaken 331 times,
+// because the units that take it have `fought` and cannot move in noncombat, so
+// no land-march garrison can ever reinforce it.
 //
 // The 2026-10-15 rally-guard row is the fix for live report pr1cd7zmh3wymr58 ("Russia should have
 // defended Kaz, Eve, Nov and/or Cau massively"). Moscow also fell in 3/16 rather

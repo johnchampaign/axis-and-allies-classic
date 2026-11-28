@@ -136,6 +136,41 @@ const standard: PlayerController<GameState, Action, Power> = {
  *                  choice; the forward-production repair is the follow-up, and it
  *                  belongs in movement rather than the shopping list.
  *                  Benchmark vs RandomAI unaffected: 20W 0L 0D over 20 games.
+ *    'standard@15' 2026-11-27, it garrisons its own income instead of marching
+ *                  past it. The #1 live complaint is that a human playing an Axis
+ *                  power wins on production against AI Allies nearly every time
+ *                  ("Bad play AI Allies", reports 5tfufya73b6mzc93 and
+ *                  vfely20um9bjv2dv). The AI retook lost income constantly and
+ *                  banked none of it: in 48 strong-axis games it recaptured
+ *                  income territory 1594 times and still let Axis income average
+ *                  a 72.9 peak against a win line of 84. Noncombat now tops up
+ *                  any of its OWN income squares that an enemy can walk into, up
+ *                  to a flat floor of two defenders, before anything marches past
+ *                  them (`holdTheIncome`). It runs ahead of the capital rally on
+ *                  purpose: a `defendFirst` power under threat used to return out
+ *                  of the rally step, so for Russia this was the only phase in
+ *                  which the approaches could ever be reinforced at all, and it
+ *                  was unreachable. MEASURED, 48 paired games
+ *                  (`probe-econ-denial.ts 48 strong-axis`, seeds 31337+i,
+ *                  baseline 2490033 in a worktree):
+ *                      arm        allies axis cap   peak income   Moscow fell
+ *                      baseline     22    11   15   72.9 (max 92)   20/48
+ *                      garrison     30     4   14   68.6 (max 88)    6/48
+ *                  Peak income Mann-Whitney p = 0.0066, Moscow Fisher p = 0.0024;
+ *                  the econ-win count itself is p = 0.089, i.e. the mechanism is
+ *                  settled and the outcome count is the same effect seen through
+ *                  a coarser lens. What makes this one shippable where the
+ *                  2026-11-20 capital-defence attempt was not: that one bought
+ *                  the same safety by turning wins into round-caps (decisive
+ *                  41 -> 26), while here decisive games are 33/48 -> 34/48 and the
+ *                  whole gain lands in the ALLIED WIN column. Tournament health
+ *                  (all-heuristic, 16 games) allies 9 / cap 7 / axis 0, 27.2
+ *                  rounds, Moscow held 16/16, no stalls. Side effect worth
+ *                  knowing: the USA capital fell in 2/48 games (never in the
+ *                  baseline), both near r27 and in games the Allies still won or
+ *                  capped. A pressure-SIZED garrison was tried first and was
+ *                  measurably worse than doing nothing; that dead end is written
+ *                  up on `holdTheIncome` itself.
  *  Retired keys stay mapped for games created before each bump. */
 export const aiControllers: Record<string, PlayerController<GameState, Action, Power>> = {
   'standard': standard,
@@ -152,4 +187,5 @@ export const aiControllers: Record<string, PlayerController<GameState, Action, P
   'standard@12': standard,
   'standard@13': standard,
   'standard@14': standard,
+  'standard@15': standard,
 };

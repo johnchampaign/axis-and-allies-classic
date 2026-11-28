@@ -1288,6 +1288,95 @@ function battleDecision(state: GameState, p: Power): Action | null {
 }
 
 // --- noncombat ---
+/** The smallest garrison that makes an income square worth attacking rather than
+ *  worth walking into. Two, not "enough to beat what is coming": see
+ *  `holdTheIncome`. */
+const GARRISON_FLOOR = 2;
+
+/** Top an income territory of ours up to a token garrison, BEFORE the army marches
+ *  past it toward the front.
+ *
+ *  The gap this closes is the one the harness autopsy keeps naming: the Allies
+ *  retake lost income 536 times per 16 strong-axis games and hold none of it, and
+ *  an Axis economic victory is assembled out of those re-grabs. The march in step
+ *  (4) already refuses to walk the LAST defender out of income (the 2026-07-26
+ *  scoreboard row), but one infantry defends on 2 — it makes a grab cheap, not
+ *  costly. Nothing moved a SECOND unit in. Russia never even reached the march:
+ *  it is `defendFirst` and `capitalThreatened` holds from about round 2, so step
+ *  (3) rallied toward Moscow and then returned null for the rest of the phase.
+ *
+ *  MEASURED DEAD END, do not redo (2026-11-28): sizing the reinforcement against
+ *  `enemyPressureOn` instead of a flat floor — "send enough to cover the
+ *  shortfall" — is strictly worse than doing nothing. Pressure counts every enemy
+ *  within two land steps plus all air in range, which on a real front no garrison
+ *  can answer, so "enough" degenerates into "everything" and Russia drains its
+ *  interior into front squares it loses regardless. 16 games, same seeds: econ
+ *  wins 4 -> 5, peak Axis income 71.8 -> 74.4 (max 86 -> 91), recaptures 536 ->
+ *  545 i.e. the churn it was built to stop did not move at all. A trace showed it
+ *  firing 199 times per 3 games, so it was doing plenty — just the pile failure
+ *  redistributed across six approaches.
+ *
+ *  So: a FLOOR, bounded by construction. At most `GARRISON_FLOOR` land units per
+ *  income square, which cannot drain an army however long the front is, aimed at
+ *  the free walkover rather than at the fight. Additive by design — three earlier
+ *  attempts at this complaint all REFUSED something (don't buy an indefensible
+ *  complex, don't site one forward, don't release the capital pile) and every one
+ *  cost decisiveness monotonically while leaving the income just as naked. */
+function holdTheIncome(state: GameState, p: Power): Action | null {
+  const thin: { t: string; short: number; ipc: number }[] = [];
+  for (const [t, ts] of Object.entries(state.territories)) {
+    if (def(t).water || ts.owner !== p || def(t).ipc <= 0) continue;
+    // Only squares an enemy could actually reach — otherwise this would post
+    // sentries in Brazil. The test is deliberately the cheap boolean form of
+    // pressure, not its magnitude: magnitude is what the dead end above used.
+    if (enemyPressureOn(state, t, p) <= 0) continue;
+    const held = ts.units.filter((u) =>
+      u.owner === p && isCombat(u) && UNITS[u.type].domain === 'land').length;
+    if (held >= GARRISON_FLOOR) continue;
+    thin.push({ t, short: GARRISON_FLOOR - held, ipc: def(t).ipc });
+  }
+  if (thin.length === 0) return null;
+  // Emptiest first, then richest: a square with nothing on it is a free grab,
+  // which is the specific thing being bought off here.
+  thin.sort((a, b) => b.short - a.short || b.ipc - a.ipc);
+
+  for (const n of thin) {
+    for (const from of def(n.t).connections) {
+      if (def(from).water) continue;
+      const fts = state.territories[from];
+      if (!fts?.owner || isEnemy(fts.owner, p)) continue;
+      // Never dismantle a front line to garrison the square behind it: a unit
+      // with an enemy next door is already holding ground, and pulling it back
+      // out of contact is how the old capital rally swept the map into one pile.
+      const atFront = def(from).connections.some((m) =>
+        !def(m).water && terr(state, m).units.some((u) => isEnemy(u.owner, p) && isCombat(u)));
+      if (atFront) continue;
+      const movers = from === CAPITAL_OF[p]
+        ? sparesIn(state, p, from)
+        : fts.units.filter((u) => u.owner === p && !u.movedPhase && !u.fought &&
+            (u.type === 'infantry' || u.type === 'armor'));
+      if (movers.length === 0) continue;
+      // The same last-defender rule the march uses, for the same reason: filling
+      // one hole by opening another is not progress. A donor that is itself
+      // income keeps its own floor first — otherwise two thin squares would hand
+      // the same infantry back and forth.
+      const keep = def(from).ipc > 0 && from !== CAPITAL_OF[p] ? GARRISON_FLOOR : 0;
+      const held = fts.units.filter((u) =>
+        u.owner === p && isCombat(u) && UNITS[u.type].domain === 'land').length;
+      const spare = Math.min(movers.length, Math.max(0, held - keep));
+      if (spare === 0) continue;
+      // Send the shortfall and not one unit more. Weakest defenders first: an
+      // infantry is the cheapest thing that makes an attacker commit, and the
+      // armour is worth more at the front.
+      const picked = [...movers].sort((a, b) => defVal(a) - defVal(b))
+        .slice(0, Math.min(spare, n.short));
+      if (picked.length === 0) continue;
+      return { kind: 'move', unitIds: picked.map((u) => u.id), path: [from, n.t] };
+    }
+  }
+  return null;
+}
+
 function noncombat(state: GameState, p: Power): Action | null {
   // 0) transports that idled through combat: load up / reposition for next turn
   const tp = transportPlay(state, p, 'noncombat');
@@ -1442,7 +1531,14 @@ function noncombat(state: GameState, p: Power): Action | null {
       return { kind: 'move', unitIds: [warship.id], path: best.path.slice(0, Math.min(3, best.path.length)) };
     }
   }
-  // 2) defensive powers under threat rally everything toward the capital
+  // 2) hold the income: top up our own income squares that an enemy could walk
+  // into, before anything marches past them. Runs ahead of the capital rally on
+  // purpose — a `defendFirst` power under threat returns null at the end of (3),
+  // so for Russia this was the only phase in which the approaches could ever be
+  // reinforced at all, and it was unreachable.
+  const garrison = holdTheIncome(state, p);
+  if (garrison) return garrison;
+  // 3) defensive powers under threat rally everything toward the capital
   const prof = PROFILES[p];
   if (prof.defendFirst && capitalThreatened(state, p)) {
     const cap = CAPITAL_OF[p];
@@ -1452,7 +1548,7 @@ function noncombat(state: GameState, p: Power): Action | null {
         u.owner === p && !u.movedPhase && !u.fought &&
         (u.type === 'infantry' || u.type === 'armor'));
       if (movers.length === 0) continue;
-      // Same last-defender guard as the march in (3) below, and for the same
+      // Same last-defender guard as the march in (4) below, and for the same
       // reason — the rally was the bigger leak. `capitalThreatened` is a bare
       // yes/no (any enemy ground within two land steps), which for Russia holds
       // from round 2 to the end of the game, so this branch fired every single
@@ -1473,7 +1569,7 @@ function noncombat(state: GameState, p: Power): Action | null {
       // test instead — rally only while the capital's defence is under 1.5x the
       // attack power within two steps — looked like the obvious fix and was
       // measurably worse. Releasing the pile does not garrison anything: the
-      // freed units march to the front under (3) and die there, so undefended
+      // freed units march to the front under (4) and die there, so undefended
       // income barely moved while Moscow started falling. Hold the income on the
       // way past; do not just open the gate.
       let marching = movers;
@@ -1488,7 +1584,7 @@ function noncombat(state: GameState, p: Power): Action | null {
     }
     return null; // hold everything else
   }
-  // 3) march one idle, safe-area ground unit toward the front — concentrated on
+  // 4) march one idle, safe-area ground unit toward the front — concentrated on
   // a single breakthrough objective (the nearest enemy capital) rather than each
   // unit drifting to its own nearest enemy, which smears the army along the whole
   // front and never masss a stack big enough to break a defended line. Or toward
